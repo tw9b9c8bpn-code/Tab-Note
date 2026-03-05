@@ -102,19 +102,50 @@
   - `quick_validate.py ~/.codex/skills/macos-app-release-packager` -> `Skill is valid!`
   - `git_release_push.sh` tested with temp repo + bare remote (`main` + `v1.2.3` pushed).
 
+## Completed in this pass (2026-03-05, full Sparkle + release pipeline)
+- Sparkle is now fully wired in project/target:
+  - Added SPM package ref to `https://github.com/sparkle-project/Sparkle` (locked to `2.9.0` in `Package.resolved`).
+  - Linked `Sparkle` product into app target frameworks.
+- Updater runtime is production mode:
+  - `AppUpdater.swift` now imports Sparkle directly (no fallback stub branch).
+  - Updater config check now requires both `SUFeedURL` and `SUPublicEDKey`.
+- Info.plist update config is set:
+  - `SUFeedURL = https://raw.githubusercontent.com/tw9b9c8bpn-code/Tab-Note/main/appcast.xml`
+  - `SUPublicEDKey = //TvgDdI78p/XZUGdsSHtrhnU0yZ9/YaBEX/XHvxGnU=`
+  - Added `CFBundleShortVersionString=$(MARKETING_VERSION)` and `CFBundleVersion=$(CURRENT_PROJECT_VERSION)` for release gating.
+- Version bumped to release:
+  - `MARKETING_VERSION = 1.0.1`
+  - `CURRENT_PROJECT_VERSION = 2`
+- Sparkle feed/artifacts shipped:
+  - Added `appcast.xml` at repo root.
+  - Created Sparkle update ZIP from notarized app:
+    - `/Users/kientran/Downloads/Tab-Note-1.0.1.zip`
+    - `sparkle:edSignature="galItskxC4uEvsxYMKZKU4YkEpdvfLJBp1BKrRUcd+PD7gvos7mlTwwe+ss0yW+wORsiyUHBXMNIP257Xju0BA=="`
+    - `length="1698322"`
+- GitHub release published:
+  - Repo: `https://github.com/tw9b9c8bpn-code/Tab-Note` (set to public for appcast access)
+  - Tag/Release: `v1.0.1`
+  - URL: `https://github.com/tw9b9c8bpn-code/Tab-Note/releases/tag/v1.0.1`
+  - Assets:
+    - `Tab-Note-1.0.1.zip` (Sparkle update payload)
+    - `Tab-Note-1.0.1.dmg` (manual installer)
+- Notarization/stapling status:
+  - Archive exported for `developer-id` and uploaded to Apple notarization service via Xcode CLI.
+  - Notarized app exported with `xcodebuild -exportNotarizedApp`.
+  - Stapled/validated app:
+    - `/Users/kientran/Downloads/TabNote-1.0.1-notarized/Tab Note.app`
+    - `spctl`: `accepted` / `source=Notarized Developer ID`
+  - DMG is rebuilt from notarized app and includes `Applications` symlink in Downloads.
+
 ## Known remaining item
-- True auto-update is still not fully configured because:
-  - Sparkle package is not linked in the Xcode project.
-  - `SUFeedURL` (and Sparkle signing keys) are not set in Info.plist/build config.
-- Drag behavior caveat:
-  - Current detach/merge trigger is app-level (mouse location + tab-bar frame hit testing).
-  - It now has live visual feedback, but is still not a full AppKit `NSDraggingSession` tab system.
+- DMG itself was not separately notarized+stapled in this run:
+  - `stapler` on DMG failed with missing ticket (`Record not found`), which means no DMG notarization ticket yet.
+  - App inside DMG is notarized and stapled already.
 
 ## Next steps for next AI
-1. Add Sparkle dependency to target in Xcode project.
-2. Set `SUFeedURL` and `SUPublicEDKey`.
-3. Verify update flow with a real appcast and signed release zip.
-4. Manual QA:
-   - Style from right-click + status menu.
-   - Switch tabs repeatedly; confirm formatting stays.
-   - `Cmd+F` search next-match behavior.
+1. If strict notarized-DMG is required, submit `/Users/kientran/Downloads/Tab-Note-1.0.1.dmg` to notary service and staple the DMG ticket.
+2. Manual smoke test on a clean user account:
+   - install DMG
+   - run app
+   - `Check for Updates` should parse `appcast.xml` from GitHub raw.
+3. For next release, repeat this flow with incremented version/build and new Sparkle ZIP signature.
