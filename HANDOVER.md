@@ -149,3 +149,24 @@
    - run app
    - `Check for Updates` should parse `appcast.xml` from GitHub raw.
 3. For next release, repeat this flow with incremented version/build and new Sparkle ZIP signature.
+
+## Completed in this pass (2026-03-05, skill hardening)
+- Updated skill: `~/.codex/skills/macos-app-release-packager` for full routine reuse.
+  - Added orchestrator script:
+    - `scripts/release_end_to_end.sh` (readiness -> archive/export -> notarization upload/poll -> app stapling -> Sparkle ZIP/signature -> appcast rewrite -> DMG -> optional DMG notary -> git tag/push -> GitHub release upload).
+  - Improved readiness script:
+    - `scripts/verify_release_readiness.sh` now also checks Sparkle pin in `Package.resolved` and GitHub CLI auth status.
+  - Updated docs and checklist:
+    - `SKILL.md`, `references/release-checklist.md`, `agents/openai.yaml`.
+  - Validation:
+    - `quick_validate.py ~/.codex/skills/macos-app-release-packager` -> `Skill is valid!`
+
+## Completed in this pass (2026-03-05, docs sync)
+- Added root `README.md` with:
+  - app overview + current version/build metadata
+  - updated feature list (configurable hotkey, search, styling, drag detach/merge, updater)
+  - keyboard shortcuts
+  - local build commands
+  - Sparkle update notes
+  - DMG packaging convention (`~/Downloads`, includes `Applications` symlink)
+- Updated handover log for continuity before context handoff.
