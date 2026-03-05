@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+
+# Xcode user data / build artifacts
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+
+# Swift Package
+.swiftpm/
+
+# App bundles / installers
+*.app
+*.dmg
+
+# Local backups/artifacts
+Tab Note new/
+Tab Note 2026-03-03 14-30-56/
