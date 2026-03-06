@@ -15,12 +15,13 @@ enum AIAction: String {
 
 class AIService {
     static let shared = AIService()
+    private var currentTask: URLSessionDataTask?
     private init() {}
 
     enum AIError: LocalizedError {
         case noEndpoint, invalidURL, noAPIKey
         case requestFailed(String)
-        case invalidResponse, noContent
+        case invalidResponse, noContent, cancelled
 
         var errorDescription: String? {
             switch self {
@@ -30,8 +31,14 @@ class AIService {
             case .requestFailed(let msg): return "Request failed: \(msg)"
             case .invalidResponse: return "Invalid response from AI"
             case .noContent: return "No content in AI response"
+            case .cancelled: return "Cancelled"
             }
         }
+    }
+
+    func cancelCurrentRequest() {
+        currentTask?.cancel()
+        currentTask = nil
     }
 
     // MARK: - Generate
@@ -119,6 +126,85 @@ class AIService {
         }
     }
 
+    func answerQuestionSentence(
+        sentence: String,
+        settings: SettingsManager,
+        onStatus: @escaping (String) -> Void,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        let question = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty else {
+            completion(.failure(AIError.noContent))
+            return
+        }
+
+        let lengthInstruction = settings.aiResponseLengthInjection
+        let modeInstruction = settings.aiResponseModeInjection
+        let expertInstruction = settings.aiExpertDisciplineInjection
+        let voiceInstruction = settings.aiVoiceFigureInjection
+        let customDirectives = [lengthInstruction, modeInstruction, expertInstruction, voiceInstruction]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+
+        let systemPrompt = """
+        You are an assistant embedded in a note editor. \
+        Use the provided paragraph context to answer clearly and directly. \
+        Follow any custom instructions exactly. \
+        When it improves readability, use lightweight Markdown formatting \
+        (short headings, bullet/numbered lists, and bold emphasis). \
+        Separate paragraphs with a single blank line. \
+        Never merge heading labels directly into body text. \
+        Do not use code fences unless explicitly requested.
+        """
+        let userMessage = """
+        Paragraph context:
+        \(question)
+
+        Custom instructions:
+        \(customDirectives.isEmpty ? "(none)" : customDirectives)
+
+        Formatting preference:
+        Rich-text friendly Markdown is allowed when helpful for readability. \
+        Keep paragraph separation clear with blank lines.
+
+        Return only the answer text.
+        """
+
+        let maxTokens: Int
+        switch settings.aiResponseLengthPresetEnum {
+        case .xs: maxTokens = 80
+        case .s: maxTokens = 220
+        case .m: maxTokens = 520
+        case .l: maxTokens = 900
+        case .xl: maxTokens = 1600
+        }
+
+        switch settings.aiModeEnum {
+        case .local:
+            callOllama(
+                endpoint: settings.aiEndpoint,
+                model: settings.aiModel.isEmpty ? "llama3" : settings.aiModel,
+                systemPrompt: systemPrompt,
+                userMessage: userMessage,
+                onStatus: onStatus,
+                completion: completion
+            )
+        case .api:
+            callOpenAICompatible(
+                endpoint: settings.aiEndpoint,
+                apiKey: settings.aiApiKey,
+                model: settings.aiModel.isEmpty ? "gpt-4" : settings.aiModel,
+                systemPrompt: systemPrompt,
+                userMessage: userMessage,
+                temperature: 0.3,
+                maxTokens: maxTokens,
+                onStatus: onStatus,
+                completion: completion
+            )
+        }
+    }
+
     // MARK: - Diagnose
 
     func diagnose(settings: SettingsManager,
@@ -186,8 +272,15 @@ class AIService {
             "stream": false
         ])
         onStatus("Generating with \(model)...")
-        URLSession.shared.dataTask(with: req) { data, _, error in
+        var task: URLSessionDataTask?
+        task = URLSession.shared.dataTask(with: req) { [weak self] data, _, error in
             DispatchQueue.main.async {
+                if self?.currentTask === task {
+                    self?.currentTask = nil
+                }
+                if let error = error as? URLError, error.code == .cancelled {
+                    completion(.failure(AIError.cancelled)); return
+                }
                 if let error = error { completion(.failure(AIError.requestFailed(error.localizedDescription))); return }
                 guard let data = data else { completion(.failure(AIError.invalidResponse)); return }
                 if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -202,13 +295,17 @@ class AIService {
                 let raw = String(data: data, encoding: .utf8) ?? "?"
                 completion(.failure(AIError.requestFailed("Unexpected: \(raw.prefix(200))")))
             }
-        }.resume()
+        }
+        currentTask = task
+        task?.resume()
     }
 
     // MARK: - OpenAI-compatible
 
     private func callOpenAICompatible(endpoint: String, apiKey: String, model: String,
                                       systemPrompt: String, userMessage: String,
+                                      temperature: Double = 0.7,
+                                      maxTokens: Int = 1024,
                                       onStatus: @escaping (String) -> Void,
                                       completion: @escaping (Result<String, Error>) -> Void) {
         guard !apiKey.isEmpty else { completion(.failure(AIError.noAPIKey)); return }
@@ -223,11 +320,18 @@ class AIService {
         req.httpBody = try? JSONSerialization.data(withJSONObject: [
             "model": model,
             "messages": [["role": "system", "content": systemPrompt], ["role": "user", "content": userMessage]],
-            "temperature": 0.7, "max_tokens": 1024
+            "temperature": temperature, "max_tokens": maxTokens
         ])
         onStatus("Generating with \(model)...")
-        URLSession.shared.dataTask(with: req) { data, _, error in
+        var task: URLSessionDataTask?
+        task = URLSession.shared.dataTask(with: req) { [weak self] data, _, error in
             DispatchQueue.main.async {
+                if self?.currentTask === task {
+                    self?.currentTask = nil
+                }
+                if let error = error as? URLError, error.code == .cancelled {
+                    completion(.failure(AIError.cancelled)); return
+                }
                 if let error = error { completion(.failure(AIError.requestFailed(error.localizedDescription))); return }
                 guard let data = data,
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -239,6 +343,8 @@ class AIService {
                 }
                 completion(.success(content))
             }
-        }.resume()
+        }
+        currentTask = task
+        task?.resume()
     }
 }

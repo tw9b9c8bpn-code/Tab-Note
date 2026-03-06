@@ -188,6 +188,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let normalizedFlags = flags.subtracting([.numericPad, .function, .help, .capsLock])
             let windowID = self.currentWindowIDForKeyEvents()
             // Arrow keys inject .numericPad + .function — strip before comparing.
             let arrowFlags = flags.subtracting([.numericPad, .function, .help])
@@ -200,6 +201,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
             }
             if flags == .command && event.keyCode == 3 {    // Cmd+F = search
                 NotificationCenter.default.post(name: .toggleSearchBar, object: windowID); return nil
+            }
+            if self.isCommandShiftH(event: event, flags: normalizedFlags) {   // Cmd+Shift+H = toggle tab area visibility
+                NotificationCenter.default.post(name: .toggleTabAreaVisibility, object: windowID); return nil
+            }
+            if self.isCommandShiftI(event: event, flags: normalizedFlags) {   // Cmd+Shift+I = toggle AI matrix panel
+                NotificationCenter.default.post(name: .toggleAIPanel, object: windowID); return nil
             }
 
             // ⌘⌥← / ⌘⌥→  — move active tab left / right
@@ -223,6 +230,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
             }
             return event
         }
+    }
+
+    private func isCommandShiftI(event: NSEvent, flags: NSEvent.ModifierFlags) -> Bool {
+        guard flags.contains(.command), flags.contains(.shift) else { return false }
+        if flags.contains(.control) || flags.contains(.option) { return false }
+        if event.keyCode == 34 { return true } // Physical "I" key on ANSI layout.
+        return event.charactersIgnoringModifiers?.lowercased() == "i"
+    }
+
+    private func isCommandShiftH(event: NSEvent, flags: NSEvent.ModifierFlags) -> Bool {
+        guard flags.contains(.command), flags.contains(.shift) else { return false }
+        if flags.contains(.control) || flags.contains(.option) { return false }
+        if event.keyCode == 4 { return true } // Physical "H" key on ANSI layout.
+        return event.charactersIgnoringModifiers?.lowercased() == "h"
     }
 
     // MARK: - Panel

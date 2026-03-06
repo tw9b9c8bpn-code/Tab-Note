@@ -18,14 +18,10 @@ struct ContentView: View {
     @EnvironmentObject var settings: SettingsManager
 
     let windowID: String
-    @State private var editorText: String = ""
-    @State private var lastSelectedId: String?
-    @State private var currentRTF: Data?
-    @State private var aiResult: AIResult? = nil
-    @State private var showAIPopup = false
     @State private var showSearch = false
     @State private var searchQuery = ""
     @State private var searchRequestID = 0
+    @State private var isTabAreaHidden = false
     @FocusState private var isSearchFieldFocused: Bool
 
     init(windowID: String = NotesStore.mainWindowID) {
@@ -48,13 +44,32 @@ struct ContentView: View {
         store.setNoteColor(id: store.selectedNoteId(in: windowID) ?? "", colorHex: hex)
     }
 
+    private var selectedNoteID: String? {
+        store.selectedNoteId(in: windowID)
+    }
+
+    private var selectedNote: TabNote? {
+        store.selectedNote(in: windowID)
+    }
+
+    private var editorBinding: Binding<String> {
+        Binding(
+            get: { selectedNote?.content ?? "" },
+            set: { newValue in
+                guard let id = selectedNoteID else { return }
+                store.updateNoteContent(id: id, content: newValue)
+            }
+        )
+    }
+
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             // Main layout
             VStack(spacing: 0) {
-                TabBarView(windowID: windowID)
-
-                Divider().opacity(settings.isDarkMode ? 0.3 : 0.5)
+                if !isTabAreaHidden {
+                    TabBarView(windowID: windowID)
+                    Divider().opacity(settings.isDarkMode ? 0.3 : 0.5)
+                }
 
                 // Search bar (appears on demand)
                 if showSearch {
@@ -89,56 +104,28 @@ struct ContentView: View {
                 }
 
                 NoteEditorView(
-                    text: $editorText,
+                    text: editorBinding,
                     searchQuery: $searchQuery,
-                    noteId: store.selectedNoteId(in: windowID),
+                    windowID: windowID,
+                    noteId: selectedNoteID,
                     searchRequestID: searchRequestID,
                     settings: settings,
                     onThemeSelected: { hex in setNoteColor(hex) },
                     onRTFChange: { rtf in
-                        currentRTF = rtf
-                        if let id = store.selectedNoteId(in: windowID) {
+                        if let id = selectedNoteID {
                             store.updateNoteRTF(id: id, rtfData: rtf)
                         }
                     },
-                    initialRTF: currentRTF
+                    initialRTF: selectedNote?.rtfData
                 )
+                .id(selectedNoteID ?? "no-note")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .onChange(of: editorText) { _, newValue in
-                    if let id = store.selectedNoteId(in: windowID) {
-                        store.updateNoteContent(id: id, content: newValue)
-                    }
-                }
-                .onChange(of: store.selectedNoteId(in: windowID)) { _, _ in
-                    loadSelectedNoteContent()
-                }
-                .onChange(of: store.selectedNote(in: windowID)?.content) { _, newValue in
-                    if let newValue, newValue != editorText { editorText = newValue }
-                }
 
                 Divider().opacity(settings.isDarkMode ? 0.3 : 0.5)
 
-                FootnoteBarView(
-                    windowID: windowID,
-                    onAIResult: { result in
-                        aiResult = result
-                        withAnimation(.spring(response: 0.3)) { showAIPopup = true }
-                    },
-                    lastAIResult: aiResult
-                )
+                FootnoteBarView(windowID: windowID)
             }
             .background(RightClickCatcherView(onThemeSelected: { hex in setNoteColor(hex) }))
-
-            // AI Result popup
-            if showAIPopup, let result = aiResult {
-                AIPopupView(result: result, isDarkMode: settings.isDarkMode) {
-                    withAnimation(.easeOut(duration: 0.2)) { showAIPopup = false }
-                }
-                .padding(.leading, 8)
-                .padding(.bottom, 32)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-                .zIndex(100)
-            }
 
             if let drag = store.activeTabDrag,
                drag.sourceWindowID == windowID,
@@ -160,21 +147,13 @@ struct ContentView: View {
         }
         .background(themeColor)
         .preferredColorScheme(settings.isDarkMode ? .dark : .light)
-        .onAppear { loadSelectedNoteContent() }
         .onReceive(NotificationCenter.default.publisher(for: .toggleSearchBar)) { note in
             if let targetWindowID = note.object as? String, targetWindowID != windowID { return }
             toggleSearchBar()
         }
-    }
-
-    private func loadSelectedNoteContent() {
-        guard let note = store.selectedNote(in: windowID) else {
-            editorText = ""; lastSelectedId = nil; currentRTF = nil; return
-        }
-        if lastSelectedId != note.id {
-            editorText = note.content
-            currentRTF = note.rtfData
-            lastSelectedId = note.id
+        .onReceive(NotificationCenter.default.publisher(for: .toggleTabAreaVisibility)) { note in
+            if let targetWindowID = note.object as? String, targetWindowID != windowID { return }
+            toggleTabAreaVisibility()
         }
     }
 
@@ -193,6 +172,12 @@ struct ContentView: View {
             DispatchQueue.main.async {
                 isSearchFieldFocused = true
             }
+        }
+    }
+
+    private func toggleTabAreaVisibility() {
+        withAnimation(.easeOut(duration: 0.15)) {
+            isTabAreaHidden.toggle()
         }
     }
 }

@@ -59,6 +59,187 @@ enum AIMode: String, CaseIterable {
     }
 }
 
+enum AIResponseLengthPreset: String, CaseIterable {
+    case xs = "XS"
+    case s = "S"
+    case m = "M"
+    case l = "L"
+    case xl = "XL"
+
+    var displayName: String { rawValue }
+
+    var injectionInstruction: String {
+        switch self {
+        case .xs: return "[IMPORTANT: Keep your response under 20 words. Be extremely brief.]"
+        case .s: return "[IMPORTANT: Keep your response under 100 words. Be concise.]"
+        case .m: return "[IMPORTANT: Keep your response under 300 words. Be moderately detailed.]"
+        case .l: return ""
+        case .xl: return "[Provide the most comprehensive and detailed response possible.]"
+        }
+    }
+}
+
+enum AIResponseModePreset: String, CaseIterable {
+    case none = "NONE"
+    case analogy = "A"
+    case socratic = "S"
+    case dialog = "D"
+    case inversion = "I"
+    case manifesto = "M"
+    case rant = "R"
+    case interactiveSimulation = "IS"
+    case tableOfContents = "T"
+    case pareto80 = "80"
+    case secondOrder2O = "2O"
+    case tierList = "TL"
+    case firstPrinciple = "FP"
+
+    var menuTitle: String {
+        switch self {
+        case .none: return "None"
+        case .analogy: return "A (analogy)"
+        case .socratic: return "S (socratic)"
+        case .dialog: return "D (dialog)"
+        case .inversion: return "I (inversion)"
+        case .manifesto: return "M (manifesto)"
+        case .rant: return "R (rant)"
+        case .interactiveSimulation: return "IS (interactive)"
+        case .tableOfContents: return "T (ToC)"
+        case .pareto80: return "80 (pareto)"
+        case .secondOrder2O: return "2O (secondOrder)"
+        case .tierList: return "TL (tierList)"
+        case .firstPrinciple: return "FP (firstPrinciple)"
+        }
+    }
+
+    var injectionInstruction: String {
+        switch self {
+        case .none:
+            return ""
+        case .analogy:
+            return "[Explain using analogies and metaphors to make concepts relatable.]"
+        case .socratic:
+            return "[Answer only with thought-provoking questions to guide understanding.]"
+        case .dialog:
+            return "[Present the explanation as a dialog between characters.]"
+        case .inversion:
+            return "[Explain by describing what NOT to do and common mistakes to avoid.]"
+        case .manifesto:
+            return "[Explain with the passion and conviction of a manifesto.]"
+        case .rant:
+            return "[Give an entertaining rant-style explanation with strong opinions.]"
+        case .interactiveSimulation:
+            return "[Create an interactive HTML simulation to demonstrate the concept. Include complete HTML/CSS/JS code that can run standalone.]"
+        case .tableOfContents:
+            return "[Explain as table of content of a Textbook]"
+        case .pareto80:
+            return "[Apply the 80/20 Pareto Principle: identify the critical 20% of inputs, causes, or actions that drive 80% of the results. Cut through the noise and ruthlessly focus on what actually moves the needle.]"
+        case .secondOrder2O:
+            return "[Use second-order thinking: go beyond the immediate first consequence. For every effect, ask 'and then what?' Reveal the downstream chain reactions, unintended outcomes, and long-term implications that most people miss.]"
+        case .tierList:
+            return "[Rank and categorize everything into a tier list using S (exceptional/elite), A (excellent), B (good), C (average), D (below average), and F (failing/avoid). Be decisive, opinionated, and justify each placement clearly.]"
+        case .firstPrinciple:
+            return "[Use first-principles thinking: strip away all assumptions, conventions, and analogies. Decompose the problem down to its most fundamental, irreducible truths. Then reason upward from those foundations to construct a fresh, clear answer from the ground up.]"
+        }
+    }
+}
+
+enum AIExpertDisciplinePreset: String, CaseIterable {
+    case none = "NONE"
+    case phy = "Phy"
+    case bio = "Bio"
+    case evoBio = "EvoBio"
+    case eco = "Eco"
+    case sys = "Sys"
+    case gam = "Gam"
+    case ecn = "Ecn"
+    case psy = "Psy"
+    case phi = "Phi"
+    case lng = "Lng"
+    case art = "Art"
+    case eng = "Eng"
+    case chm = "Chm"
+    case tec = "Tec"
+    case elc = "Elc"
+    case acc = "Acc"
+    case che = "Che"
+    case nut = "Nut"
+    case doc = "Doc"
+    case des = "Des"
+    case fen = "Fen"
+    case arc = "Arc"
+
+    var roleTitle: String {
+        switch self {
+        case .none: return "None"
+        case .phy: return "Physicist"
+        case .bio: return "Biologist"
+        case .evoBio: return "Evolutionary Biologist"
+        case .eco: return "Ecologist"
+        case .sys: return "Systems Theorist"
+        case .gam: return "Game Theorist"
+        case .ecn: return "Economist"
+        case .psy: return "Psychologist"
+        case .phi: return "Philosopher"
+        case .lng: return "Linguist"
+        case .art: return "Artist"
+        case .eng: return "Engineer"
+        case .chm: return "Chemist"
+        case .tec: return "Technologist"
+        case .elc: return "Electrician"
+        case .acc: return "Accountant"
+        case .che: return "Chef"
+        case .nut: return "Nutritionist"
+        case .doc: return "Doctor"
+        case .des: return "Designer"
+        case .fen: return "Feng Shui Expert"
+        case .arc: return "Architect"
+        }
+    }
+
+    var menuTitle: String {
+        self == .none ? "None" : "\(rawValue) (\(roleTitle))"
+    }
+
+    var injectionInstruction: String {
+        guard self != .none else { return "" }
+        return "[Act as a \(roleTitle)]"
+    }
+}
+
+enum AIVoiceFigurePreset: String, CaseIterable {
+    case none = "NONE"
+    case aynRand = "Ayn Rand"
+    case leeKuanYew = "Lee Kuan Yew"
+    case eckhartTolle = "Eckhart Tolle"
+    case jidduKrishnamurti = "Jiddu Krishnamurti"
+    case aristotle = "Aristotle"
+    case machiavelli = "Machiavelli"
+    case nietzsche = "Nietzsche"
+    case erichFromm = "Erich Fromm"
+    case michaelGreger = "Michael Greger"
+    case michaelSaylor = "Michael Saylor"
+    case maxwellMaltz = "Maxwell Maltz"
+    case byungChulHan = "Byung-Chul Han"
+    case harryBrowne = "Harry Browne"
+    case sethGodin = "Seth Godin"
+    case drNicoleLePera = "Dr. Nicole LePera"
+    case richardKoch = "Richard Koch"
+    case jeffBezos = "Jeff Bezos"
+    case sunTzu = "Sun Tzu"
+    case leonardoDaVinci = "Leonardo da Vinci"
+    case navalRavikant = "Naval Ravikant"
+
+    var menuTitle: String {
+        self == .none ? "None" : rawValue
+    }
+
+    var injectionInstruction: String {
+        guard self != .none else { return "" }
+        return "[Answer in the voice, tone, and philosophical style of \(rawValue). Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]"
+    }
+}
+
 class SettingsManager: ObservableObject {
     static let shared = SettingsManager()
     static let hotkeyKeyNames: [Int: String] = [
@@ -95,6 +276,22 @@ class SettingsManager: ObservableObject {
     var aiModel: String {
         get { defaults.string(forKey: "aiModel") ?? "" }
         set { objectWillChange.send(); defaults.set(newValue, forKey: "aiModel") }
+    }
+    var aiResponseLengthPreset: String {
+        get { defaults.string(forKey: "aiResponseLengthPreset") ?? AIResponseLengthPreset.l.rawValue }
+        set { objectWillChange.send(); defaults.set(newValue, forKey: "aiResponseLengthPreset") }
+    }
+    var aiResponseModePreset: String {
+        get { defaults.string(forKey: "aiResponseModePreset") ?? AIResponseModePreset.none.rawValue }
+        set { objectWillChange.send(); defaults.set(newValue, forKey: "aiResponseModePreset") }
+    }
+    var aiExpertDisciplinePreset: String {
+        get { defaults.string(forKey: "aiExpertDisciplinePreset") ?? AIExpertDisciplinePreset.none.rawValue }
+        set { objectWillChange.send(); defaults.set(newValue, forKey: "aiExpertDisciplinePreset") }
+    }
+    var aiVoiceFigurePreset: String {
+        get { defaults.string(forKey: "aiVoiceFigurePreset") ?? AIVoiceFigurePreset.none.rawValue }
+        set { objectWillChange.send(); defaults.set(newValue, forKey: "aiVoiceFigurePreset") }
     }
     var hotkeyKeyCode: Int {
         get { defaults.object(forKey: "hotkeyKeyCode") as? Int ?? 1 }
@@ -152,6 +349,63 @@ class SettingsManager: ObservableObject {
     var aiModeEnum: AIMode {
         get { AIMode(rawValue: aiMode) ?? .local }
         set { aiMode = newValue.rawValue }
+    }
+
+    var aiResponseLengthPresetEnum: AIResponseLengthPreset {
+        get { AIResponseLengthPreset(rawValue: aiResponseLengthPreset) ?? .l }
+        set { aiResponseLengthPreset = newValue.rawValue }
+    }
+
+    var aiResponseModePresetEnum: AIResponseModePreset {
+        get { AIResponseModePreset(rawValue: aiResponseModePreset) ?? .none }
+        set { aiResponseModePreset = newValue.rawValue }
+    }
+
+    var aiExpertDisciplinePresetEnum: AIExpertDisciplinePreset {
+        get { AIExpertDisciplinePreset(rawValue: aiExpertDisciplinePreset) ?? .none }
+        set { aiExpertDisciplinePreset = newValue.rawValue }
+    }
+
+    var aiVoiceFigurePresetEnum: AIVoiceFigurePreset {
+        get { AIVoiceFigurePreset(rawValue: aiVoiceFigurePreset) ?? .none }
+        set { aiVoiceFigurePreset = newValue.rawValue }
+    }
+
+    var aiResponseLengthInjection: String {
+        aiResponseLengthPresetEnum.injectionInstruction
+    }
+
+    var aiResponseModeInjection: String {
+        aiResponseModePresetEnum.injectionInstruction
+    }
+
+    var aiExpertDisciplineInjection: String {
+        aiExpertDisciplinePresetEnum.injectionInstruction
+    }
+
+    var aiVoiceFigureInjection: String {
+        aiVoiceFigurePresetEnum.injectionInstruction
+    }
+
+    var aiPromptSummaryChip: String {
+        var parts: [String] = []
+        if aiResponseLengthPresetEnum != .l {
+            parts.append(aiResponseLengthPresetEnum.rawValue)
+        }
+        if aiResponseModePresetEnum != .none {
+            parts.append(aiResponseModePresetEnum.rawValue)
+        }
+        if aiExpertDisciplinePresetEnum != .none {
+            parts.append(aiExpertDisciplinePresetEnum.rawValue)
+        }
+        if aiVoiceFigurePresetEnum != .none {
+            let cleaned = aiVoiceFigurePresetEnum.rawValue
+                .replacingOccurrences(of: "Dr. ", with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let surname = cleaned.split(separator: " ").last.map(String.init) ?? cleaned
+            parts.append(surname)
+        }
+        return parts.isEmpty ? "AI" : parts.joined(separator: " • ")
     }
 
     var launchAtLogin: Bool {
