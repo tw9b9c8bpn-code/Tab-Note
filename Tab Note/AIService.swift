@@ -19,6 +19,74 @@ class AIService {
     private var currentStreamingTask: Task<Void, Never>?
     private init() {}
 
+    struct InlineAnswerOptions {
+        var aiMode: AIMode
+        var endpoint: String
+        var apiKey: String
+        var model: String
+        var responseLengthPreset: AIResponseLengthPreset
+        var responseModePreset: AIResponseModePreset
+        var expertDisciplinePreset: AIExpertDisciplinePreset
+        var voiceFigurePreset: AIVoiceFigurePreset
+
+        init(
+            aiMode: AIMode,
+            endpoint: String,
+            apiKey: String,
+            model: String,
+            responseLengthPreset: AIResponseLengthPreset,
+            responseModePreset: AIResponseModePreset,
+            expertDisciplinePreset: AIExpertDisciplinePreset,
+            voiceFigurePreset: AIVoiceFigurePreset
+        ) {
+            self.aiMode = aiMode
+            self.endpoint = endpoint
+            self.apiKey = apiKey
+            self.model = model
+            self.responseLengthPreset = responseLengthPreset
+            self.responseModePreset = responseModePreset
+            self.expertDisciplinePreset = expertDisciplinePreset
+            self.voiceFigurePreset = voiceFigurePreset
+        }
+
+        init(settings: SettingsManager) {
+            self.init(
+                aiMode: settings.aiModeEnum,
+                endpoint: settings.aiEndpoint,
+                apiKey: settings.aiApiKey,
+                model: settings.aiModel,
+                responseLengthPreset: settings.aiResponseLengthPresetEnum,
+                responseModePreset: settings.aiResponseModePresetEnum,
+                expertDisciplinePreset: settings.aiExpertDisciplinePresetEnum,
+                voiceFigurePreset: settings.aiVoiceFigurePresetEnum
+            )
+        }
+
+        var summaryChip: String {
+            SettingsManager.makeAIPromptSummaryChip(
+                length: responseLengthPreset,
+                mode: responseModePreset,
+                expert: expertDisciplinePreset,
+                voice: voiceFigurePreset
+            )
+        }
+
+        var maxTokens: Int {
+            switch responseLengthPreset {
+            case .xs: return 80
+            case .s: return 220
+            case .m: return 520
+            case .l: return 900
+            case .xl: return 1600
+            }
+        }
+
+        var lengthInstruction: String { responseLengthPreset.injectionInstruction }
+        var modeInstruction: String { responseModePreset.injectionInstruction }
+        var expertInstruction: String { expertDisciplinePreset.injectionInstruction }
+        var voiceInstruction: String { voiceFigurePreset.injectionInstruction }
+    }
+
     var isRequestInFlight: Bool {
         currentTask != nil || currentStreamingTask != nil
     }
@@ -140,16 +208,32 @@ class AIService {
         onPartial: @escaping (String) -> Void = { _ in },
         completion: @escaping (Result<String, Error>) -> Void
     ) {
+        answerQuestionSentence(
+            sentence: sentence,
+            options: InlineAnswerOptions(settings: settings),
+            onStatus: onStatus,
+            onPartial: onPartial,
+            completion: completion
+        )
+    }
+
+    func answerQuestionSentence(
+        sentence: String,
+        options: InlineAnswerOptions,
+        onStatus: @escaping (String) -> Void,
+        onPartial: @escaping (String) -> Void = { _ in },
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
         let question = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else {
             completion(.failure(AIError.noContent))
             return
         }
 
-        let lengthInstruction = settings.aiResponseLengthInjection
-        let modeInstruction = settings.aiResponseModeInjection
-        let expertInstruction = settings.aiExpertDisciplineInjection
-        let voiceInstruction = settings.aiVoiceFigureInjection
+        let lengthInstruction = options.lengthInstruction
+        let modeInstruction = options.modeInstruction
+        let expertInstruction = options.expertInstruction
+        let voiceInstruction = options.voiceInstruction
         let customDirectives = [lengthInstruction, modeInstruction, expertInstruction, voiceInstruction]
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
@@ -179,20 +263,11 @@ class AIService {
         Return only the answer text.
         """
 
-        let maxTokens: Int
-        switch settings.aiResponseLengthPresetEnum {
-        case .xs: maxTokens = 80
-        case .s: maxTokens = 220
-        case .m: maxTokens = 520
-        case .l: maxTokens = 900
-        case .xl: maxTokens = 1600
-        }
-
-        switch settings.aiModeEnum {
+        switch options.aiMode {
         case .local:
             callOllama(
-                endpoint: settings.aiEndpoint,
-                model: settings.aiModel.isEmpty ? "llama3" : settings.aiModel,
+                endpoint: options.endpoint,
+                model: options.model.isEmpty ? "llama3" : options.model,
                 systemPrompt: systemPrompt,
                 userMessage: userMessage,
                 streamResponse: true,
@@ -202,13 +277,99 @@ class AIService {
             )
         case .api:
             callOpenAICompatible(
-                endpoint: settings.aiEndpoint,
-                apiKey: settings.aiApiKey,
-                model: settings.aiModel.isEmpty ? "gpt-4" : settings.aiModel,
+                endpoint: options.endpoint,
+                apiKey: options.apiKey,
+                model: options.model.isEmpty ? "gpt-4" : options.model,
                 systemPrompt: systemPrompt,
                 userMessage: userMessage,
                 temperature: 0.3,
-                maxTokens: maxTokens,
+                maxTokens: options.maxTokens,
+                streamResponse: true,
+                onStatus: onStatus,
+                onPartial: onPartial,
+                completion: completion
+            )
+        }
+    }
+
+    func answerFollowUpQuestion(
+        question: String,
+        paragraphContext: String,
+        previousAnswer: String,
+        options: InlineAnswerOptions,
+        onStatus: @escaping (String) -> Void,
+        onPartial: @escaping (String) -> Void = { _ in },
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        let trimmedQuestion = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuestion.isEmpty else {
+            completion(.failure(AIError.noContent))
+            return
+        }
+
+        let customDirectives = [
+            options.lengthInstruction,
+            options.modeInstruction,
+            options.expertInstruction,
+            options.voiceInstruction
+        ]
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+        .joined(separator: "\n")
+
+        let systemPrompt = """
+        You are an assistant embedded in a note editor. \
+        You are answering a follow-up question about a paragraph and a previous AI answer. \
+        Use the original paragraph for grounding, then extend or clarify based on the user's follow-up. \
+        Follow any custom instructions exactly. \
+        When it improves readability, use lightweight Markdown formatting \
+        (short headings, bullet/numbered lists, and bold emphasis). \
+        Separate paragraphs with a single blank line. \
+        Never merge heading labels directly into body text. \
+        Do not use code fences unless explicitly requested.
+        """
+
+        let userMessage = """
+        Original paragraph context:
+        \(paragraphContext.trimmingCharacters(in: .whitespacesAndNewlines))
+
+        Previous AI answer:
+        \(previousAnswer.trimmingCharacters(in: .whitespacesAndNewlines))
+
+        Follow-up question:
+        \(trimmedQuestion)
+
+        Custom instructions:
+        \(customDirectives.isEmpty ? "(none)" : customDirectives)
+
+        Formatting preference:
+        Rich-text friendly Markdown is allowed when helpful for readability. \
+        Keep paragraph separation clear with blank lines.
+
+        Return only the answer text.
+        """
+
+        switch options.aiMode {
+        case .local:
+            callOllama(
+                endpoint: options.endpoint,
+                model: options.model.isEmpty ? "llama3" : options.model,
+                systemPrompt: systemPrompt,
+                userMessage: userMessage,
+                streamResponse: true,
+                onStatus: onStatus,
+                onPartial: onPartial,
+                completion: completion
+            )
+        case .api:
+            callOpenAICompatible(
+                endpoint: options.endpoint,
+                apiKey: options.apiKey,
+                model: options.model.isEmpty ? "gpt-4" : options.model,
+                systemPrompt: systemPrompt,
+                userMessage: userMessage,
+                temperature: 0.3,
+                maxTokens: options.maxTokens,
                 streamResponse: true,
                 onStatus: onStatus,
                 onPartial: onPartial,

@@ -135,6 +135,12 @@ class NotesStore: ObservableObject {
             .sorted { $0.order < $1.order }
     }
 
+    private func visualOrderedNotes(in windowID: String) -> [TabNote] {
+        let windowNotes = notes(in: windowID)
+        return windowNotes.filter(\.isPinned).sorted { $0.order < $1.order }
+            + windowNotes.filter { !$0.isPinned }.sorted { $0.order < $1.order }
+    }
+
     func selectedNoteId(in windowID: String) -> String? {
         if windowID == Self.mainWindowID {
             return selectedNoteId
@@ -249,6 +255,8 @@ class NotesStore: ObservableObject {
               let index = notes.firstIndex(where: { $0.id == id }) else { return }
         let note = notes[index]
         let windowID = note.windowID
+        let orderedBeforeDelete = visualOrderedNotes(in: windowID)
+        let deletedVisualIndex = orderedBeforeDelete.firstIndex(where: { $0.id == id })
 
         // Move to deleted
         let deleted = DeletedNote(from: note)
@@ -260,9 +268,21 @@ class NotesStore: ObservableObject {
         lastDeletedNote = deleted
         notes.remove(at: index)
 
-        let windowNotes = notes(in: windowID)
         if selectedNoteId(in: windowID) == id {
-            if let replacement = windowNotes.first?.id {
+            let remainingOrdered = visualOrderedNotes(in: windowID)
+            let replacementIndex: Int? = {
+                guard let deletedVisualIndex, !remainingOrdered.isEmpty else { return remainingOrdered.isEmpty ? nil : 0 }
+                let preferredLeftIndex = deletedVisualIndex - 1
+                if preferredLeftIndex >= 0, preferredLeftIndex < remainingOrdered.count {
+                    return preferredLeftIndex
+                }
+                return remainingOrdered.isEmpty ? nil : min(deletedVisualIndex, remainingOrdered.count - 1)
+            }()
+
+            if let replacementIndex,
+               replacementIndex >= 0,
+               replacementIndex < remainingOrdered.count {
+                let replacement = remainingOrdered[replacementIndex].id
                 setSelectedNoteId(replacement, in: windowID)
             } else if windowID == Self.mainWindowID {
                 createNote(in: Self.mainWindowID, title: "New Note")
@@ -278,10 +298,7 @@ class NotesStore: ObservableObject {
     }
 
     func selectTab(at index: Int, in windowID: String = NotesStore.mainWindowID) {
-        // Visual order: pinned (sorted by .order) then normal (sorted by .order)
-        let windowNotes = notes(in: windowID)
-        let ordered = windowNotes.filter(\.isPinned).sorted { $0.order < $1.order }
-                    + windowNotes.filter { !$0.isPinned }.sorted { $0.order < $1.order }
+        let ordered = visualOrderedNotes(in: windowID)
         guard index >= 0 && index < ordered.count else { return }
         setSelectedNoteId(ordered[index].id, in: windowID)
     }
@@ -308,10 +325,7 @@ class NotesStore: ObservableObject {
     /// Respects the pinned / normal boundary.
     func moveSelectedTab(by delta: Int, in windowID: String = NotesStore.mainWindowID) {
         guard let id = selectedNoteId(in: windowID) else { return }
-        // Build visual order: pinned first (sorted), then normal (sorted)
-        let windowNotes = notes(in: windowID)
-        let ordered = windowNotes.filter(\.isPinned).sorted { $0.order < $1.order }
-                    + windowNotes.filter { !$0.isPinned }.sorted { $0.order < $1.order }
+        let ordered = visualOrderedNotes(in: windowID)
         guard let idx = ordered.firstIndex(where: { $0.id == id }) else { return }
         let newIdx = idx + delta
         guard newIdx >= 0 && newIdx < ordered.count else { return }
@@ -329,9 +343,7 @@ class NotesStore: ObservableObject {
 
     func selectAdjacentTab(by delta: Int, in windowID: String = NotesStore.mainWindowID) {
         guard delta != 0 else { return }
-        let windowNotes = notes(in: windowID)
-        let ordered = windowNotes.filter(\.isPinned).sorted { $0.order < $1.order }
-                    + windowNotes.filter { !$0.isPinned }.sorted { $0.order < $1.order }
+        let ordered = visualOrderedNotes(in: windowID)
         guard !ordered.isEmpty else { return }
 
         guard let currentID = selectedNoteId(in: windowID),

@@ -234,6 +234,14 @@ enum AIVoiceFigurePreset: String, CaseIterable {
         self == .none ? "None" : rawValue
     }
 
+    var summaryLabel: String {
+        guard self != .none else { return "Voice" }
+        let cleaned = rawValue
+            .replacingOccurrences(of: "Dr. ", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.split(separator: " ").last.map(String.init) ?? cleaned
+    }
+
     var injectionInstruction: String {
         guard self != .none else { return "" }
         return "[Answer in the voice, tone, and philosophical style of \(rawValue). Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]"
@@ -388,22 +396,32 @@ class SettingsManager: ObservableObject {
     }
 
     var aiPromptSummaryChip: String {
+        SettingsManager.makeAIPromptSummaryChip(
+            length: aiResponseLengthPresetEnum,
+            mode: aiResponseModePresetEnum,
+            expert: aiExpertDisciplinePresetEnum,
+            voice: aiVoiceFigurePresetEnum
+        )
+    }
+
+    static func makeAIPromptSummaryChip(
+        length: AIResponseLengthPreset,
+        mode: AIResponseModePreset,
+        expert: AIExpertDisciplinePreset,
+        voice: AIVoiceFigurePreset
+    ) -> String {
         var parts: [String] = []
-        if aiResponseLengthPresetEnum != .l {
-            parts.append(aiResponseLengthPresetEnum.rawValue)
+        if length != .l {
+            parts.append(length.rawValue)
         }
-        if aiResponseModePresetEnum != .none {
-            parts.append(aiResponseModePresetEnum.rawValue)
+        if mode != .none {
+            parts.append(mode.rawValue)
         }
-        if aiExpertDisciplinePresetEnum != .none {
-            parts.append(aiExpertDisciplinePresetEnum.rawValue)
+        if expert != .none {
+            parts.append(expert.rawValue)
         }
-        if aiVoiceFigurePresetEnum != .none {
-            let cleaned = aiVoiceFigurePresetEnum.rawValue
-                .replacingOccurrences(of: "Dr. ", with: "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            let surname = cleaned.split(separator: " ").last.map(String.init) ?? cleaned
-            parts.append(surname)
+        if voice != .none {
+            parts.append(voice.summaryLabel)
         }
         return parts.isEmpty ? "AI" : parts.joined(separator: " • ")
     }

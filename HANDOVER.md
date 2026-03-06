@@ -412,3 +412,50 @@
   - existing `Cmd+Option+Left/Right` tab-reordering hotkeys were kept intact.
 - Important implementation detail: the old inline-marker code paths still exist for legacy payload decoding/cleanup, but new live AI answers use only the shared panel controller.
 - Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
+
+## Completed in this pass (2026-03-06, popover titlebar transparency + Cmd+Space tab close hardening)
+- Created a pre-change checkpoint commit before this pass: `3007c75` (`checkpoint: persistent streaming AI panel and tab hotkeys`).
+- Hardened `Cmd+Space` tab closing in two places:
+  - App-level local monitor now uses normalized modifier matching instead of raw exact flag matching,
+  - editor-level `performKeyEquivalent` also closes the selected tab directly when the text view has focus.
+- AI response panel window chrome was reduced further:
+  - titlebar is now transparent / separatorless,
+  - panel window background is clear + non-opaque,
+  - content is pushed down with a transparent top clearance so the close button sits over clear space instead of over the content card.
+- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
+
+## Completed in this pass (2026-03-06, borderless AI panel + inline close control)
+- AI response panel no longer uses a native titlebar or standard red close button.
+- Panel window is now borderless/resizable, and the close action is a low-profile inline `xmark` button in the top-left of the popover header, positioned left of the summary chip.
+- Removed the old titlebar spacer logic from the popover sizing/layout and rebalanced chrome height for the borderless presentation.
+- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
+
+## Completed in this pass (2026-03-06, close-tab behavior revert + draggable AI header polish)
+- Reverted the extra `Cmd+Space` tab-close interception back to the original app/editor handling so the user's restored global shortcut setup is no longer overridden by new matching logic.
+- Fixed post-close tab selection to choose the immediate visual left neighbor of the closed tab instead of jumping to the first tab.
+- Made the borderless AI response panel header draggable by using a dedicated drag region across the full top strip.
+- Improved the custom close button with a larger hit target, hover feedback, and a subtle scale/background animation.
+- Added a monochrome animated gradient treatment for the `Thinking...` state before streamed response text arrives.
+- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
+- Manual runtime check still recommended: close a middle tab and confirm selection moves to the immediate left tab, then drag the AI panel from its header and verify the custom close button feels reliable.
+
+## Completed in this pass (2026-03-06, compact AI header alignment fix)
+- Reduced the animated `Thinking...` label back down to a smaller size (`12pt`) so it no longer overpowers the panel while streaming.
+- Fixed the borderless AI panel top-strip layout so the header remains a fixed-height bar and the full panel content stays pinned to the top-left when the window is manually resized larger.
+- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
+
+## Completed in this pass (2026-03-06, editable AI prompt chip + replay)
+- Narrowed the AI panel footer interaction strip so the copy control now occupies roughly 70% of the panel width instead of spanning the full footer row.
+- Replaced the static summary chip with live per-answer prompt controls in the AI panel header:
+  - response length is always editable from the header,
+  - active response mode / expert discipline / voice selections are editable in place from the same header,
+  - added a replay button to regenerate the answer using the updated local prompt selections.
+- Added an `AIService.InlineAnswerOptions` snapshot so panel replay regenerates from the original paragraph context without mutating the global footnote settings.
+- Kept compatibility with the old legacy inline-answer payload presenter path so historical saved payloads still open.
+- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
+
+## Completed in this pass (2026-03-06, AI panel placeholders + follow-up field)
+- The AI response panel header now always shows all prompt groups as selectable controls: length, mode, expert, and voice. Unselected groups render as placeholders (`Mode`, `Expert`, `Voice`) so they can be chosen directly from the top bar before replay.
+- Added a compact pill-style follow-up text field to the center of the AI panel footer while keeping the copy action at the right edge of the reduced-width footer strip.
+- Added per-answer follow-up request handling in the shared AI panel controller, including replay of follow-up answers with the correct preserved context and restoring the previous answer if a replay/follow-up is cancelled or fails.
+- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.

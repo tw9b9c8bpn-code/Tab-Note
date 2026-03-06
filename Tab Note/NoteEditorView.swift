@@ -245,7 +245,7 @@ struct NoteEditorView: NSViewRepresentable {
             if commandSelector == #selector(NSResponder.cancelOperation(_:)), AIService.shared.isRequestInFlight {
                 AIService.shared.cancelCurrentRequest()
                 Self.publishInlineAIStatus("Cancelled", inFlight: false, windowID: parent.windowID)
-                HighlightCapturingTextView.finishSharedInlineAnswerStreaming()
+                InlineAnswerPanelController.shared.finishStreaming()
                 return true
             }
             guard commandSelector == #selector(NSResponder.insertTab(_:)) else { return false }
@@ -293,59 +293,15 @@ struct NoteEditorView: NSViewRepresentable {
                 return
             }
             let requestWindowID = parent.windowID
-            let summaryChip = parent.settings.aiPromptSummaryChip
-            let aiMode = parent.settings.aiModeEnum
-            let model = parent.settings.aiModel
+            let requestOptions = AIService.InlineAnswerOptions(settings: parent.settings)
             let anchorLocation = preferredLocation ?? context.insertionLocation
 
-            HighlightCapturingTextView.beginSharedInlineAnswerStreaming(
-                summaryChip: summaryChip,
-                aiMode: aiMode,
-                model: model,
+            HighlightCapturingTextView.startSharedInlineAnswerRequest(
+                sentence: context.paragraph,
+                requestWindowID: requestWindowID,
+                options: requestOptions,
                 preferredLocation: anchorLocation,
                 in: textView
-            )
-            Self.publishInlineAIStatus("Reading paragraph...", inFlight: true, windowID: requestWindowID)
-
-            AIService.shared.answerQuestionSentence(
-                sentence: context.paragraph,
-                settings: parent.settings,
-                onStatus: { status in
-                    DispatchQueue.main.async {
-                        Self.publishInlineAIStatus(status, inFlight: true, windowID: requestWindowID)
-                    }
-                },
-                onPartial: { partial in
-                    DispatchQueue.main.async {
-                        HighlightCapturingTextView.updateSharedInlineAnswerStreaming(
-                            Self.normalizeStreamingInlineAnswer(partial)
-                        )
-                    }
-                },
-                completion: { result in
-                    DispatchQueue.main.async {
-                        switch result {
-                        case .success(let raw):
-                            let answer = Self.normalizeInlineAnswer(raw)
-                            guard !answer.isEmpty else {
-                                HighlightCapturingTextView.dismissSharedInlineAnswerPopover()
-                                Self.publishInlineAIStatus("No answer generated", inFlight: false, windowID: requestWindowID)
-                                NSSound.beep()
-                                return
-                            }
-                            HighlightCapturingTextView.completeSharedInlineAnswerStreaming(answer)
-                            Self.publishInlineAIStatus("Answer ready", inFlight: false, windowID: requestWindowID)
-                        case .failure(let error):
-                            if let aiError = error as? AIService.AIError, case .cancelled = aiError {
-                                HighlightCapturingTextView.finishSharedInlineAnswerStreaming()
-                                Self.publishInlineAIStatus("Cancelled", inFlight: false, windowID: requestWindowID)
-                            } else {
-                                HighlightCapturingTextView.finishSharedInlineAnswerStreaming()
-                                Self.publishInlineAIStatus("Error: \(error.localizedDescription)", inFlight: false, windowID: requestWindowID)
-                            }
-                        }
-                    }
-                }
             )
         }
 
@@ -406,45 +362,6 @@ struct NoteEditorView: NSViewRepresentable {
                 return paragraphRange.location + triggerRange.location + triggerRange.length
             }
             return paragraphRange.location + questionOnlyRange.location + questionOnlyRange.length
-        }
-
-        private static func normalizeInlineAnswer(_ raw: String) -> String {
-            var text = raw
-                .replacingOccurrences(of: "\r\n", with: "\n")
-                .replacingOccurrences(of: "\r", with: "\n")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-
-            // Restore common missing spacing around punctuation from model output.
-            text = text.replacingOccurrences(of: #":(?=[A-Za-z])"#, with: ": ", options: .regularExpression)
-            text = text.replacingOccurrences(of: #"\*\*([^*\n]{1,80}?):\s*\*\*"#, with: "**$1:**", options: .regularExpression)
-            text = text.replacingOccurrences(of: #"([^\s\n])(?=\*\*)"#, with: "$1 ", options: .regularExpression)
-            text = text.replacingOccurrences(of: #"(\*\*[^*\n]+\*\*)(?=[A-Za-z0-9])"#, with: "$1 ", options: .regularExpression)
-
-            // Only split before speaker/label-style bold markers (e.g. "**Maya:**"),
-            // not generic inline bold spans.
-            text = text.replacingOccurrences(
-                of: #"(?<!^)(?<!\n)\s*(\*\*[A-Za-z][^*\n]{0,60}:\*\*)"#,
-                with: "\n\n$1",
-                options: .regularExpression
-            )
-
-            // If the model returns a wall of text, split long prose into paragraphs.
-            if !text.contains("\n\n"), text.count > 220 {
-                text = text.replacingOccurrences(
-                    of: #"([.!?])\s+(?=[A-Z])"#,
-                    with: "$1\n\n",
-                    options: .regularExpression
-                )
-            }
-
-            text = text.replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
-            return text.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-
-        private static func normalizeStreamingInlineAnswer(_ raw: String) -> String {
-            raw
-                .replacingOccurrences(of: "\r\n", with: "\n")
-                .replacingOccurrences(of: "\r", with: "\n")
         }
 
         private static func publishInlineAIStatus(_ status: String, inFlight: Bool, windowID: String) {
@@ -675,34 +592,22 @@ class HighlightCapturingTextView: NSTextView {
         deleteInlineAnswerMarker(at: sender.tag)
     }
 
-    static func beginSharedInlineAnswerStreaming(
-        summaryChip: String,
-        aiMode: AIMode,
-        model: String,
+    static func startSharedInlineAnswerRequest(
+        sentence: String,
+        requestWindowID: String,
+        options: AIService.InlineAnswerOptions,
         preferredLocation: Int,
         in textView: HighlightCapturingTextView
     ) {
         let maxLocation = max(0, (textView.string as NSString).length - 1)
         let anchorCharacterIndex = max(0, min(preferredLocation, maxLocation))
         let anchorRect = textView.screenRect(for: textView.characterRect(for: anchorCharacterIndex))
-        inlineAnswerController.beginStreaming(
-            summaryChip: summaryChip,
-            aiMode: aiMode,
-            model: model,
+        inlineAnswerController.startRequest(
+            sentence: sentence,
+            requestWindowID: requestWindowID,
+            options: options,
             anchorScreenRect: anchorRect
         )
-    }
-
-    static func updateSharedInlineAnswerStreaming(_ answer: String) {
-        inlineAnswerController.updateStreamingAnswer(answer)
-    }
-
-    static func completeSharedInlineAnswerStreaming(_ answer: String) {
-        inlineAnswerController.completeStreaming(with: answer)
-    }
-
-    static func finishSharedInlineAnswerStreaming() {
-        inlineAnswerController.finishStreaming()
     }
 
     static func dismissSharedInlineAnswerPopover() {
@@ -1293,21 +1198,122 @@ class HighlightCapturingTextView: NSTextView {
 }
 
 private final class InlineAnswerPanelModel: ObservableObject {
+    enum RequestKind {
+        case initial
+        case followUp
+    }
+
     @Published var rawAnswer: String = ""
-    @Published var summaryChip: String = ""
+    @Published var summaryChip: String = "AI"
     @Published var model: String = ""
     @Published var aiMode: AIMode = .local
     @Published var contentSize: NSSize = NSSize(width: 220, height: 120)
     @Published var isStreaming = false
+    @Published var responseLengthPreset: AIResponseLengthPreset = .l {
+        didSet { refreshSummaryChip() }
+    }
+    @Published var responseModePreset: AIResponseModePreset = .none {
+        didSet { refreshSummaryChip() }
+    }
+    @Published var expertDisciplinePreset: AIExpertDisciplinePreset = .none {
+        didSet { refreshSummaryChip() }
+    }
+    @Published var voiceFigurePreset: AIVoiceFigurePreset = .none {
+        didSet { refreshSummaryChip() }
+    }
+
+    var requestSentence: String = ""
+    var requestWindowID: String = NotesStore.mainWindowID
+    var endpoint: String = ""
+    var apiKey: String = ""
+    var sourceParagraph: String = ""
+    var priorAnswerContext: String = ""
+    var followUpQuestion: String = ""
+    var requestKind: RequestKind = .initial
 
     var hasVisibleContent: Bool {
         !rawAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    var hasReplayContext: Bool {
+        !requestSentence.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var currentRequestOptions: AIService.InlineAnswerOptions {
+        AIService.InlineAnswerOptions(
+            aiMode: aiMode,
+            endpoint: endpoint,
+            apiKey: apiKey,
+            model: model,
+            responseLengthPreset: responseLengthPreset,
+            responseModePreset: responseModePreset,
+            expertDisciplinePreset: expertDisciplinePreset,
+            voiceFigurePreset: voiceFigurePreset
+        )
+    }
+
+    func applyRequestContext(sentence: String, windowID: String, options: AIService.InlineAnswerOptions) {
+        requestSentence = sentence
+        requestWindowID = windowID
+        endpoint = options.endpoint
+        apiKey = options.apiKey
+        aiMode = options.aiMode
+        model = options.model
+        responseLengthPreset = options.responseLengthPreset
+        responseModePreset = options.responseModePreset
+        expertDisciplinePreset = options.expertDisciplinePreset
+        voiceFigurePreset = options.voiceFigurePreset
+        sourceParagraph = sentence
+        priorAnswerContext = ""
+        followUpQuestion = ""
+        requestKind = .initial
+        refreshSummaryChip()
+    }
+
+    func applyFollowUpContext(question: String, previousAnswer: String, options: AIService.InlineAnswerOptions) {
+        requestSentence = question
+        priorAnswerContext = previousAnswer
+        followUpQuestion = question
+        requestKind = .followUp
+        endpoint = options.endpoint
+        apiKey = options.apiKey
+        aiMode = options.aiMode
+        model = options.model
+        responseLengthPreset = options.responseLengthPreset
+        responseModePreset = options.responseModePreset
+        expertDisciplinePreset = options.expertDisciplinePreset
+        voiceFigurePreset = options.voiceFigurePreset
+        refreshSummaryChip()
+    }
+
     func reset() {
         rawAnswer = ""
+        summaryChip = "AI"
+        model = ""
+        aiMode = .local
         isStreaming = false
         contentSize = NSSize(width: 220, height: 120)
+        responseLengthPreset = .l
+        responseModePreset = .none
+        expertDisciplinePreset = .none
+        voiceFigurePreset = .none
+        requestSentence = ""
+        requestWindowID = NotesStore.mainWindowID
+        endpoint = ""
+        apiKey = ""
+        sourceParagraph = ""
+        priorAnswerContext = ""
+        followUpQuestion = ""
+        requestKind = .initial
+    }
+
+    private func refreshSummaryChip() {
+        summaryChip = SettingsManager.makeAIPromptSummaryChip(
+            length: responseLengthPreset,
+            mode: responseModePreset,
+            expert: expertDisciplinePreset,
+            voice: voiceFigurePreset
+        )
     }
 }
 
@@ -1318,13 +1324,76 @@ private final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
     private var panel: ActivatingPanel?
     private var anchorScreenRect: NSRect?
     private var isSuppressed = false
+    private var activeRequestID = UUID()
+    private var fallbackAnswerBeforeRequest: String?
 
-    func beginStreaming(summaryChip: String, aiMode: AIMode, model: String, anchorScreenRect: NSRect) {
-        configure(summaryChip: summaryChip, aiMode: aiMode, model: model, anchorScreenRect: anchorScreenRect)
-        self.model.rawAnswer = ""
-        self.model.isStreaming = true
-        self.model.contentSize = InlineCursorAnswerPopoverView.preferredSize(for: "", isStreaming: true)
-        presentPanel(useAnchor: true)
+    func startRequest(
+        sentence: String,
+        requestWindowID: String,
+        options: AIService.InlineAnswerOptions,
+        anchorScreenRect: NSRect?,
+        useAnchor: Bool = true
+    ) {
+        if AIService.shared.isRequestInFlight {
+            AIService.shared.cancelCurrentRequest()
+        }
+
+        isSuppressed = false
+        if let anchorScreenRect {
+            self.anchorScreenRect = anchorScreenRect
+        }
+        fallbackAnswerBeforeRequest = model.rawAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : model.rawAnswer
+        model.applyRequestContext(sentence: sentence, windowID: requestWindowID, options: options)
+        model.rawAnswer = ""
+        model.isStreaming = true
+        model.contentSize = InlineCursorAnswerPopoverView.preferredSize(for: "", isStreaming: true)
+
+        let requestID = UUID()
+        activeRequestID = requestID
+        presentPanel(useAnchor: useAnchor)
+        postInlineAIStatus("Reading paragraph...", inFlight: true, windowID: requestWindowID)
+
+        AIService.shared.answerQuestionSentence(
+            sentence: sentence,
+            options: options,
+            onStatus: { [weak self] status in
+                DispatchQueue.main.async {
+                    guard let self, self.activeRequestID == requestID else { return }
+                    self.postInlineAIStatus(status, inFlight: true, windowID: requestWindowID)
+                }
+            },
+            onPartial: { [weak self] partial in
+                DispatchQueue.main.async {
+                    guard let self, self.activeRequestID == requestID else { return }
+                    self.updateStreamingAnswer(self.normalizeStreamingAnswer(partial))
+                }
+            },
+            completion: { [weak self] result in
+                DispatchQueue.main.async {
+                    guard let self, self.activeRequestID == requestID else { return }
+                    switch result {
+                    case .success(let raw):
+                        let answer = self.normalizeCompletedAnswer(raw)
+                        guard !answer.isEmpty else {
+                            self.restoreAfterFailedRefreshOrClose()
+                            self.postInlineAIStatus("No answer generated", inFlight: false, windowID: requestWindowID)
+                            NSSound.beep()
+                            return
+                        }
+                        self.fallbackAnswerBeforeRequest = nil
+                        self.completeStreaming(with: answer)
+                        self.postInlineAIStatus("Answer ready", inFlight: false, windowID: requestWindowID)
+                    case .failure(let error):
+                        self.restoreAfterFailedRefreshOrClose()
+                        if let aiError = error as? AIService.AIError, case .cancelled = aiError {
+                            self.postInlineAIStatus("Cancelled", inFlight: false, windowID: requestWindowID)
+                        } else {
+                            self.postInlineAIStatus("Error: \(error.localizedDescription)", inFlight: false, windowID: requestWindowID)
+                        }
+                    }
+                }
+            }
+        )
     }
 
     func updateStreamingAnswer(_ answer: String) {
@@ -1351,21 +1420,132 @@ private final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
         }
     }
 
-    func present(answer: String, summaryChip: String, aiMode: AIMode, model: String, anchorScreenRect: NSRect) {
-        configure(summaryChip: summaryChip, aiMode: aiMode, model: model, anchorScreenRect: anchorScreenRect)
-        self.model.rawAnswer = answer
-        self.model.isStreaming = false
-        self.model.contentSize = InlineCursorAnswerPopoverView.preferredSize(for: answer, isStreaming: false)
+    func present(
+        answer: String,
+        summaryChip: String,
+        aiMode: AIMode,
+        model modelName: String,
+        anchorScreenRect: NSRect
+    ) {
+        isSuppressed = false
+        self.anchorScreenRect = anchorScreenRect
+        model.summaryChip = summaryChip
+        model.aiMode = aiMode
+        model.model = modelName
+        model.rawAnswer = answer
+        model.isStreaming = false
+        model.contentSize = InlineCursorAnswerPopoverView.preferredSize(for: answer, isStreaming: false)
         presentPanel(useAnchor: true)
+    }
+
+    func askFollowUp(_ question: String) {
+        let trimmedQuestion = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuestion.isEmpty else {
+            NSSound.beep()
+            return
+        }
+        guard !model.sourceParagraph.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            NSSound.beep()
+            return
+        }
+
+        if AIService.shared.isRequestInFlight {
+            AIService.shared.cancelCurrentRequest()
+        }
+
+        let requestWindowID = model.requestWindowID
+        let options = model.currentRequestOptions
+        let previousAnswer = model.rawAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !previousAnswer.isEmpty else {
+            NSSound.beep()
+            return
+        }
+
+        isSuppressed = false
+        fallbackAnswerBeforeRequest = previousAnswer
+        model.applyFollowUpContext(question: trimmedQuestion, previousAnswer: previousAnswer, options: options)
+        model.rawAnswer = ""
+        model.isStreaming = true
+        model.contentSize = InlineCursorAnswerPopoverView.preferredSize(for: "", isStreaming: true)
+
+        let requestID = UUID()
+        activeRequestID = requestID
+        presentPanel(useAnchor: false)
+        postInlineAIStatus("Asking follow-up...", inFlight: true, windowID: requestWindowID)
+
+        AIService.shared.answerFollowUpQuestion(
+            question: trimmedQuestion,
+            paragraphContext: model.sourceParagraph,
+            previousAnswer: previousAnswer,
+            options: options,
+            onStatus: { [weak self] status in
+                DispatchQueue.main.async {
+                    guard let self, self.activeRequestID == requestID else { return }
+                    self.postInlineAIStatus(status, inFlight: true, windowID: requestWindowID)
+                }
+            },
+            onPartial: { [weak self] partial in
+                DispatchQueue.main.async {
+                    guard let self, self.activeRequestID == requestID else { return }
+                    self.updateStreamingAnswer(self.normalizeStreamingAnswer(partial))
+                }
+            },
+            completion: { [weak self] result in
+                DispatchQueue.main.async {
+                    guard let self, self.activeRequestID == requestID else { return }
+                    switch result {
+                    case .success(let raw):
+                        let answer = self.normalizeCompletedAnswer(raw)
+                        guard !answer.isEmpty else {
+                            self.restoreAfterFailedRefreshOrClose()
+                            self.postInlineAIStatus("No answer generated", inFlight: false, windowID: requestWindowID)
+                            NSSound.beep()
+                            return
+                        }
+                        self.fallbackAnswerBeforeRequest = nil
+                        self.completeStreaming(with: answer)
+                        self.postInlineAIStatus("Answer ready", inFlight: false, windowID: requestWindowID)
+                    case .failure(let error):
+                        self.restoreAfterFailedRefreshOrClose()
+                        if let aiError = error as? AIService.AIError, case .cancelled = aiError {
+                            self.postInlineAIStatus("Cancelled", inFlight: false, windowID: requestWindowID)
+                        } else {
+                            self.postInlineAIStatus("Error: \(error.localizedDescription)", inFlight: false, windowID: requestWindowID)
+                        }
+                    }
+                }
+            }
+        )
+    }
+
+    func replayCurrentAnswer() {
+        guard model.hasReplayContext else {
+            NSSound.beep()
+            return
+        }
+        switch model.requestKind {
+        case .initial:
+            startRequest(
+                sentence: model.sourceParagraph,
+                requestWindowID: model.requestWindowID,
+                options: model.currentRequestOptions,
+                anchorScreenRect: nil,
+                useAnchor: false
+            )
+        case .followUp:
+            askFollowUp(model.followUpQuestion)
+        }
     }
 
     func close() {
         isSuppressed = true
+        activeRequestID = UUID()
         panel?.orderOut(nil)
         panel?.close()
         panel = nil
         anchorScreenRect = nil
         model.reset()
+        fallbackAnswerBeforeRequest = nil
     }
 
     func syncAppearance(isDarkMode: Bool) {
@@ -1381,15 +1561,9 @@ private final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
         panel = nil
         anchorScreenRect = nil
         isSuppressed = true
+        activeRequestID = UUID()
         model.reset()
-    }
-
-    private func configure(summaryChip: String, aiMode: AIMode, model: String, anchorScreenRect: NSRect) {
-        isSuppressed = false
-        self.anchorScreenRect = anchorScreenRect
-        self.model.summaryChip = summaryChip
-        self.model.aiMode = aiMode
-        self.model.model = model
+        fallbackAnswerBeforeRequest = nil
     }
 
     private func presentPanel(useAnchor: Bool) {
@@ -1405,20 +1579,22 @@ private final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
         let host = NSHostingController(rootView: InlineCursorAnswerPopoverView(model: model))
         let newPanel = ActivatingPanel(
             contentRect: NSRect(origin: .zero, size: model.contentSize),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            styleMask: [.borderless, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
-        newPanel.titleVisibility = .hidden
-        newPanel.titlebarAppearsTransparent = true
+        host.view.wantsLayer = true
+        host.view.layer?.backgroundColor = NSColor.clear.cgColor
         newPanel.isFloatingPanel = true
         newPanel.hidesOnDeactivate = false
         newPanel.level = .floating
         newPanel.isReleasedWhenClosed = false
+        newPanel.isOpaque = false
+        newPanel.backgroundColor = .clear
+        newPanel.hasShadow = true
+        newPanel.isMovableByWindowBackground = true
         newPanel.contentMinSize = NSSize(width: 220, height: 120)
         newPanel.contentMaxSize = NSSize(width: 380, height: 600)
-        newPanel.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        newPanel.standardWindowButton(.zoomButton)?.isHidden = true
         newPanel.contentViewController = host
         newPanel.delegate = self
         panel = newPanel
@@ -1473,12 +1649,71 @@ private final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
         let y = max(screenFrame.minY + 24, min(origin.y, screenFrame.maxY - size.height - 24))
         return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
+
+    private func normalizeCompletedAnswer(_ raw: String) -> String {
+        var text = raw
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        text = text.replacingOccurrences(of: #":(?=[A-Za-z])"#, with: ": ", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"\*\*([^*\n]{1,80}?):\s*\*\*"#, with: "**$1:**", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"([^\s\n])(?=\*\*)"#, with: "$1 ", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"(\*\*[^*\n]+\*\*)(?=[A-Za-z0-9])"#, with: "$1 ", options: .regularExpression)
+        text = text.replacingOccurrences(
+            of: #"(?<!^)(?<!\n)\s*(\*\*[A-Za-z][^*\n]{0,60}:\*\*)"#,
+            with: "\n\n$1",
+            options: .regularExpression
+        )
+
+        if !text.contains("\n\n"), text.count > 220 {
+            text = text.replacingOccurrences(
+                of: #"([.!?])\s+(?=[A-Z])"#,
+                with: "$1\n\n",
+                options: .regularExpression
+            )
+        }
+
+        text = text.replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func normalizeStreamingAnswer(_ raw: String) -> String {
+        raw
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+    }
+
+    private func postInlineAIStatus(_ status: String, inFlight: Bool, windowID: String) {
+        NotificationCenter.default.post(
+            name: .inlineAIStatusDidChange,
+            object: windowID,
+            userInfo: [
+                "status": status,
+                "inFlight": inFlight
+            ]
+        )
+    }
+
+    private func restoreAfterFailedRefreshOrClose() {
+        if let previousAnswer = fallbackAnswerBeforeRequest,
+           !previousAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            model.rawAnswer = previousAnswer
+            model.isStreaming = false
+            fallbackAnswerBeforeRequest = nil
+            refreshPanelLayout(useAnchor: false)
+        } else {
+            finishStreaming()
+        }
+    }
 }
 
 private struct InlineCursorAnswerPopoverView: View {
     @ObservedObject private var settings = SettingsManager.shared
     @ObservedObject var model: InlineAnswerPanelModel
     @State private var showPricingPopover = false
+    @State private var isCloseHovered = false
+    @State private var followUpDraft = ""
 
     struct ResponseMetrics {
         let words: Int
@@ -1546,7 +1781,7 @@ private struct InlineCursorAnswerPopoverView: View {
             candidateWidths = [300, 340, 380]
         }
 
-        let chromeHeight: CGFloat = 92
+        let chromeHeight: CGFloat = 96
         let minHeight: CGFloat = 120
         let maxHeight: CGFloat = 600
 
@@ -2007,6 +2242,10 @@ private struct InlineCursorAnswerPopoverView: View {
         "\(metrics.words)w • ~\(metrics.tokens)t • \(Self.formattedCost(metrics.estimatedCost))"
     }
 
+    private var showsThinkingAnimation: Bool {
+        model.isStreaming && model.rawAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private var pricingRows: [(label: String, cost: Double, isActive: Bool)] {
         [
             ("Current: \(activeModelLabel)", metrics.estimatedCost, true),
@@ -2054,49 +2293,155 @@ private struct InlineCursorAnswerPopoverView: View {
         }
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 8) {
-                Text(model.summaryChip.isEmpty ? "AI" : model.summaryChip)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .overlay(
-                        Capsule()
-                            .stroke(.secondary.opacity(0.45), lineWidth: 1)
-                    )
-                Spacer(minLength: 0)
-                HStack(spacing: 5) {
-                    Text(metricsLine)
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .foregroundStyle(metricsTextColor)
-                        .lineLimit(1)
-                    Button {
-                        showPricingPopover.toggle()
-                    } label: {
-                        Image(systemName: "dollarsign.circle")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(metricsTextColor.opacity(0.92))
+    private func closePanel() {
+        InlineAnswerPanelController.shared.close()
+    }
+
+    private func replayAnswer() {
+        InlineAnswerPanelController.shared.replayCurrentAnswer()
+    }
+
+    private var summaryTextColor: Color {
+        settings.isDarkMode ? .white.opacity(0.78) : .black.opacity(0.72)
+    }
+
+    private var summaryBorderColor: Color {
+        settings.isDarkMode ? .white.opacity(0.18) : .black.opacity(0.16)
+    }
+
+    @ViewBuilder
+    private var promptSummaryControls: some View {
+        HStack(spacing: 6) {
+            HStack(spacing: 4) {
+                promptMenuLabel(model.responseLengthPreset.rawValue) {
+                    ForEach(AIResponseLengthPreset.allCases, id: \.rawValue) { option in
+                        Button(selectionTitle(option.displayName, isSelected: model.responseLengthPreset == option)) {
+                            model.responseLengthPreset = option
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .popover(isPresented: $showPricingPopover, arrowEdge: .top) {
-                        PricingBreakdownPopover(
-                            tokenCount: metrics.tokens,
-                            rows: pricingRows,
-                            isDarkMode: settings.isDarkMode
-                        )
+                }
+
+                summaryDivider
+                promptMenuLabel(
+                    model.responseModePreset == .none ? "Mode" : model.responseModePreset.rawValue,
+                    isPlaceholder: model.responseModePreset == .none
+                ) {
+                    ForEach(AIResponseModePreset.allCases, id: \.rawValue) { option in
+                        Button(selectionTitle(option.menuTitle, isSelected: model.responseModePreset == option)) {
+                            model.responseModePreset = option
+                        }
+                    }
+                }
+
+                summaryDivider
+                promptMenuLabel(
+                    model.expertDisciplinePreset == .none ? "Expert" : model.expertDisciplinePreset.rawValue,
+                    isPlaceholder: model.expertDisciplinePreset == .none
+                ) {
+                    ForEach(AIExpertDisciplinePreset.allCases, id: \.rawValue) { option in
+                        Button(selectionTitle(option.menuTitle, isSelected: model.expertDisciplinePreset == option)) {
+                            model.expertDisciplinePreset = option
+                        }
+                    }
+                }
+
+                summaryDivider
+                promptMenuLabel(
+                    model.voiceFigurePreset == .none ? "Voice" : model.voiceFigurePreset.summaryLabel,
+                    isPlaceholder: model.voiceFigurePreset == .none
+                ) {
+                    ForEach(AIVoiceFigurePreset.allCases, id: \.rawValue) { option in
+                        Button(selectionTitle(option.menuTitle, isSelected: model.voiceFigurePreset == option)) {
+                            model.voiceFigurePreset = option
+                        }
                     }
                 }
             }
-
-            SelectableAttributedTextView(
-                attributedText: displayAttributedAnswer,
-                isDarkMode: settings.isDarkMode
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .overlay(
+                Capsule()
+                    .stroke(summaryBorderColor, lineWidth: 1)
             )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+            if model.hasReplayContext {
+                Button(action: replayAnswer) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(summaryTextColor.opacity(model.isStreaming ? 0.42 : 0.88))
+                }
+                .buttonStyle(.plain)
+                .help("Regenerate with current prompt selections")
+                .disabled(model.isStreaming)
+            }
+        }
+    }
+
+    private var summaryDivider: some View {
+        Text("•")
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(summaryTextColor.opacity(0.62))
+            .allowsHitTesting(false)
+    }
+
+    private func promptMenuLabel<Content: View>(
+        _ label: String,
+        isPlaceholder: Bool = false,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        Menu {
+            content()
+        } label: {
+            Text(label)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(summaryTextColor.opacity(isPlaceholder ? 0.44 : 1))
+                .fixedSize()
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+    }
+
+    private func selectionTitle(_ title: String, isSelected: Bool) -> String {
+        isSelected ? "✓ \(title)" : title
+    }
+
+    private func submitFollowUp() {
+        let trimmed = followUpDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        InlineAnswerPanelController.shared.askFollowUp(trimmed)
+        followUpDraft = ""
+    }
+
+    private var followUpField: some View {
+        TextField("Follow up", text: $followUpDraft)
+            .textFieldStyle(.plain)
+            .font(.system(size: 10.5, weight: .medium))
+            .foregroundStyle(settings.isDarkMode ? .white.opacity(0.9) : .black.opacity(0.82))
+            .padding(.horizontal, 11)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(settings.isDarkMode ? Color.white.opacity(0.05) : Color.black.opacity(0.045))
+                    .overlay(
+                        Capsule()
+                            .stroke(settings.isDarkMode ? Color.white.opacity(0.12) : Color.black.opacity(0.10), lineWidth: 1)
+                    )
+            )
+            .frame(minWidth: 130, idealWidth: 180, maxWidth: 210)
+            .disabled(model.isStreaming || !model.hasReplayContext)
+            .opacity((model.isStreaming || !model.hasReplayContext) ? 0.55 : 1)
+            .onSubmit(submitFollowUp)
+    }
+
+    private var footerBar: some View {
+        GeometryReader { geometry in
+            let barWidth = max(120, geometry.size.width * 0.7)
             HStack(spacing: 8) {
+                Color.clear
+                    .frame(width: 16, height: 1)
+                Spacer(minLength: 0)
+                followUpField
                 Spacer(minLength: 0)
                 Button {
                     copyAllToPasteboard()
@@ -2108,6 +2453,78 @@ private struct InlineCursorAnswerPopoverView: View {
                 .buttonStyle(.plain)
                 .help("Copy all")
             }
+            .frame(width: barWidth)
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+        .frame(height: 24)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ZStack {
+                WindowDragRegion()
+
+                HStack(alignment: .center, spacing: 8) {
+                    Button(action: closePanel) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.secondary.opacity(isCloseHovered ? 0.98 : 0.78))
+                            .frame(width: 24, height: 24)
+                            .background(
+                                Circle()
+                                    .fill(.primary.opacity(isCloseHovered ? 0.10 : 0.001))
+                            )
+                            .scaleEffect(isCloseHovered ? 1.04 : 1.0)
+                    }
+                    .buttonStyle(.plain)
+                    .contentShape(Rectangle())
+                    .help("Close")
+                    .onHover { hovering in
+                        isCloseHovered = hovering
+                    }
+                    .animation(.easeOut(duration: 0.14), value: isCloseHovered)
+
+                    promptSummaryControls
+                    Spacer(minLength: 0)
+                    HStack(spacing: 5) {
+                        Text(metricsLine)
+                            .font(.system(size: 9, weight: .medium, design: .monospaced))
+                            .foregroundStyle(metricsTextColor)
+                            .lineLimit(1)
+                            .allowsHitTesting(false)
+                        Button {
+                            showPricingPopover.toggle()
+                        } label: {
+                            Image(systemName: "dollarsign.circle")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(metricsTextColor.opacity(0.92))
+                        }
+                        .buttonStyle(.plain)
+                        .popover(isPresented: $showPricingPopover, arrowEdge: .top) {
+                            PricingBreakdownPopover(
+                                tokenCount: metrics.tokens,
+                                rows: pricingRows,
+                                isDarkMode: settings.isDarkMode
+                            )
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 24, maxHeight: 24)
+
+            Group {
+                if showsThinkingAnimation {
+                    ThinkingGradientText(isDarkMode: settings.isDarkMode)
+                } else {
+                    SelectableAttributedTextView(
+                        attributedText: displayAttributedAnswer,
+                        isDarkMode: settings.isDarkMode
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+            footerBar
         }
         .padding(12)
         .background(
@@ -2125,7 +2542,8 @@ private struct InlineCursorAnswerPopoverView: View {
             maxWidth: .infinity,
             minHeight: 120,
             idealHeight: model.contentSize.height,
-            maxHeight: .infinity
+            maxHeight: .infinity,
+            alignment: .topLeading
         )
     }
 }
@@ -2173,6 +2591,63 @@ private struct SelectableAttributedTextView: NSViewRepresentable {
         if !textView.attributedString().isEqual(to: attributedText) {
             textView.textStorage?.setAttributedString(attributedText)
         }
+    }
+}
+
+private struct WindowDragRegion: NSViewRepresentable {
+    func makeNSView(context: Context) -> DragRegionView {
+        DragRegionView()
+    }
+
+    func updateNSView(_ nsView: DragRegionView, context: Context) {}
+
+    final class DragRegionView: NSView {
+        override var isOpaque: Bool { false }
+
+        override func mouseDown(with event: NSEvent) {
+            window?.performDrag(with: event)
+        }
+    }
+}
+
+private struct ThinkingGradientText: View {
+    let isDarkMode: Bool
+    @State private var gradientOffset: CGFloat = -140
+    private let fontSize: CGFloat = 12
+
+    private var baseColor: Color {
+        isDarkMode ? .white.opacity(0.22) : .black.opacity(0.16)
+    }
+
+    private var brightColor: Color {
+        isDarkMode ? .white.opacity(0.95) : .black.opacity(0.86)
+    }
+
+    var body: some View {
+        Text("Thinking...")
+            .font(.system(size: fontSize, weight: .semibold))
+            .foregroundStyle(baseColor)
+            .overlay {
+                LinearGradient(
+                    colors: [baseColor, brightColor, baseColor],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: 180)
+                .offset(x: gradientOffset)
+                .mask(
+                    Text("Thinking...")
+                        .font(.system(size: fontSize, weight: .semibold))
+                )
+            }
+            .padding(.top, 4)
+            .onAppear {
+                gradientOffset = -140
+                withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
+                    gradientOffset = 140
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 

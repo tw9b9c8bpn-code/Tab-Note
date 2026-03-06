@@ -193,13 +193,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
             // Arrow keys inject .numericPad + .function — strip before comparing.
             let arrowFlags = flags.subtracting([.numericPad, .function, .help])
 
-            if flags == .command && event.keyCode == 17 { self.notesStore.createNote(in: windowID); return nil }
+            if normalizedFlags == .command && event.keyCode == 17 { self.notesStore.createNote(in: windowID); return nil }
             if flags == .command && event.keyCode == 49 { self.notesStore.deleteSelectedNote(in: windowID); return nil }
-            if flags == [.command, .shift] && event.keyCode == 17 { self.notesStore.recoverLastDeletedNote(); return nil }
-            if flags == .command && event.keyCode == 37 {   // Cmd+L = rename
+            if normalizedFlags == [.command, .shift] && event.keyCode == 17 { self.notesStore.recoverLastDeletedNote(); return nil }
+            if normalizedFlags == .command && event.keyCode == 37 {   // Cmd+L = rename
                 self.notesStore.renamingNoteId = self.notesStore.selectedNoteId(in: windowID); return nil
             }
-            if flags == .command && event.keyCode == 3 {    // Cmd+F = search
+            if normalizedFlags == .command && event.keyCode == 3 {    // Cmd+F = search
                 NotificationCenter.default.post(name: .toggleSearchBar, object: windowID); return nil
             }
             if self.isCommandShiftH(event: event, flags: normalizedFlags) {   // Cmd+Shift+H = toggle tab area visibility
@@ -234,7 +234,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
             }
 
             let numKeyCodes: [UInt16: Int] = [18:0,19:1,20:2,21:3,23:4,22:5,26:6,28:7,25:8]
-            if flags == .command, let idx = numKeyCodes[event.keyCode] {
+            if normalizedFlags == .command, let idx = numKeyCodes[event.keyCode] {
                 self.notesStore.selectTab(at: idx, in: windowID); return nil
             }
             return event
