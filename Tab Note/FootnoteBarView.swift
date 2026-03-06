@@ -474,6 +474,7 @@ struct QuickGuideView: View {
                 shortcutRow("⌘⇧T",         "Recover Deleted Tab")
                 shortcutRow("⌘1–9",        "Switch to Tab 1–9")
                 shortcutRow("⌘⌥← / →",    "Move Tab Left / Right")
+                shortcutRow("⌘⇧⌥← / →",    "Switch Tab Left / Right")
                 shortcutRow("⌘L",          "Rename current tab")
                 shortcutRow("⌘B / ⌘I",    "Bold / Italic")
                 shortcutRow("⌘U",          "Highlight text")

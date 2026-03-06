@@ -459,3 +459,23 @@
 - Added a compact pill-style follow-up text field to the center of the AI panel footer while keeping the copy action at the right edge of the reduced-width footer strip.
 - Added per-answer follow-up request handling in the shared AI panel controller, including replay of follow-up answers with the correct preserved context and restoring the previous answer if a replay/follow-up is cancelled or fails.
 - Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
+
+## Completed in this pass (2026-03-06, AI panel min-width + footer cleanup)
+- Raised the AI response panel minimum width to `366pt` across its seeded content size, preferred sizing logic, window min size, and SwiftUI frame so the initial open state no longer clips the right edge / rounded corner.
+- Removed the footer copy button entirely.
+- Shifted the follow-up field lower by reducing the panel's bottom padding, kept it centered in the reduced-width footer strip, and made the `Follow up` placeholder more subtle with lower-opacity prompt styling.
+- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
+
+## Completed in this pass (2026-03-06, web architecture diagram)
+- The requested `visualizer explainer plugin` was not available in this session, so a direct fallback was created instead.
+- Added a standalone clickable web architecture diagram for the app at `docs/tab-note-architecture-diagram.html`.
+- The diagram maps the app shell, NotesStore/persistence, editor surface, AI panel, settings layer, updater path, and external model-provider flow.
+
+## Completed in this pass (2026-03-06, shared prompt-routing skill package)
+- Added shared reusable skill package at:
+  `/Users/kientran/Desktop/KiensApps/skills/prompt-injection-routing-kit`
+- Captured the current Tab Note inline pattern as one host archetype inside the skill:
+  - compact inline/header controls,
+  - single-select mode/expert/voice caps,
+  - developer/system-prompt routing profile.
+- Paired that with the Octopus multi-surface web-overlay archetype so future apps can reuse one shared 4-dimension system instead of re-deriving enums/prompts/UI rules from scratch.

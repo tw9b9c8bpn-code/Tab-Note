@@ -1207,7 +1207,7 @@ private final class InlineAnswerPanelModel: ObservableObject {
     @Published var summaryChip: String = "AI"
     @Published var model: String = ""
     @Published var aiMode: AIMode = .local
-    @Published var contentSize: NSSize = NSSize(width: 220, height: 120)
+    @Published var contentSize: NSSize = NSSize(width: 366, height: 120)
     @Published var isStreaming = false
     @Published var responseLengthPreset: AIResponseLengthPreset = .l {
         didSet { refreshSummaryChip() }
@@ -1292,7 +1292,7 @@ private final class InlineAnswerPanelModel: ObservableObject {
         model = ""
         aiMode = .local
         isStreaming = false
-        contentSize = NSSize(width: 220, height: 120)
+        contentSize = NSSize(width: 366, height: 120)
         responseLengthPreset = .l
         responseModePreset = .none
         expertDisciplinePreset = .none
@@ -1593,7 +1593,7 @@ private final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
         newPanel.backgroundColor = .clear
         newPanel.hasShadow = true
         newPanel.isMovableByWindowBackground = true
-        newPanel.contentMinSize = NSSize(width: 220, height: 120)
+        newPanel.contentMinSize = NSSize(width: 366, height: 120)
         newPanel.contentMaxSize = NSSize(width: 380, height: 600)
         newPanel.contentViewController = host
         newPanel.delegate = self
@@ -1772,13 +1772,13 @@ private struct InlineCursorAnswerPopoverView: View {
         let candidateWidths: [CGFloat]
         switch attributedText.string.count {
         case 0...70:
-            candidateWidths = [220, 250, 280]
+            candidateWidths = [366, 380]
         case 71...160:
-            candidateWidths = [250, 290, 330]
+            candidateWidths = [366, 380]
         case 161...320:
-            candidateWidths = [280, 320, 360]
+            candidateWidths = [366, 380]
         default:
-            candidateWidths = [300, 340, 380]
+            candidateWidths = [366, 380]
         }
 
         let chromeHeight: CGFloat = 96
@@ -2414,7 +2414,12 @@ private struct InlineCursorAnswerPopoverView: View {
     }
 
     private var followUpField: some View {
-        TextField("Follow up", text: $followUpDraft)
+        TextField(
+            "",
+            text: $followUpDraft,
+            prompt: Text("Follow up")
+                .foregroundStyle(settings.isDarkMode ? .white.opacity(0.24) : .black.opacity(0.22))
+        )
             .textFieldStyle(.plain)
             .font(.system(size: 10.5, weight: .medium))
             .foregroundStyle(settings.isDarkMode ? .white.opacity(0.9) : .black.opacity(0.82))
@@ -2428,7 +2433,7 @@ private struct InlineCursorAnswerPopoverView: View {
                             .stroke(settings.isDarkMode ? Color.white.opacity(0.12) : Color.black.opacity(0.10), lineWidth: 1)
                     )
             )
-            .frame(minWidth: 130, idealWidth: 180, maxWidth: 210)
+            .frame(minWidth: 130, idealWidth: 180, maxWidth: 300)
             .disabled(model.isStreaming || !model.hasReplayContext)
             .opacity((model.isStreaming || !model.hasReplayContext) ? 0.55 : 1)
             .onSubmit(submitFollowUp)
@@ -2436,22 +2441,11 @@ private struct InlineCursorAnswerPopoverView: View {
 
     private var footerBar: some View {
         GeometryReader { geometry in
-            let barWidth = max(120, geometry.size.width * 0.7)
-            HStack(spacing: 8) {
-                Color.clear
-                    .frame(width: 16, height: 1)
+            let barWidth = max(180, geometry.size.width * 0.7)
+            HStack(spacing: 0) {
                 Spacer(minLength: 0)
                 followUpField
                 Spacer(minLength: 0)
-                Button {
-                    copyAllToPasteboard()
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary.opacity(0.78))
-                }
-                .buttonStyle(.plain)
-                .help("Copy all")
             }
             .frame(width: barWidth)
             .frame(maxWidth: .infinity, alignment: .center)
@@ -2526,7 +2520,9 @@ private struct InlineCursorAnswerPopoverView: View {
 
             footerBar
         }
-        .padding(12)
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 7)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(panelBackground)
@@ -2537,7 +2533,7 @@ private struct InlineCursorAnswerPopoverView: View {
         )
         .background(PanelAppearanceSyncView(isDarkMode: settings.isDarkMode))
         .frame(
-            minWidth: 220,
+            minWidth: 366,
             idealWidth: model.contentSize.width,
             maxWidth: .infinity,
             minHeight: 120,
