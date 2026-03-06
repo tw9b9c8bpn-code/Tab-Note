@@ -396,3 +396,19 @@
   - this avoids stale note content/RTF being replayed into the editor during tab switches.
 - Added `.id(selectedNoteID)` on `NoteEditorView` so AppKit editor state is rebuilt cleanly when switching tabs.
 - Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
+
+## Completed in this pass (2026-03-06, persistent streaming AI panel + adjacent tab hotkeys)
+- Added real-time AI response streaming for inline-question answers:
+  - `AIService.answerQuestionSentence(...)` now streams partial output for both Ollama (`/api/chat`, NDJSON) and OpenAI-compatible chat endpoints (`stream: true`, SSE/line parsing),
+  - `Escape` cancellation still works against the shared in-flight request.
+- Replaced the text-view-owned AI popover lifecycle with a shared panel controller:
+  - the AI response panel now opens immediately and updates live as text streams in,
+  - it no longer closes when switching tabs because it is no longer tied to the current `NSTextView` instance,
+  - explicit manual close via the window close button suppresses the rest of that response instead of reopening itself mid-stream.
+- Removed visible scrollbars from the AI response panel while preserving scroll behavior inside the text area.
+- Added adjacent tab switching hotkeys:
+  - `Cmd+Option+Shift+Left` selects the tab to the left,
+  - `Cmd+Option+Shift+Right` selects the tab to the right,
+  - existing `Cmd+Option+Left/Right` tab-reordering hotkeys were kept intact.
+- Important implementation detail: the old inline-marker code paths still exist for legacy payload decoding/cleanup, but new live AI answers use only the shared panel controller.
+- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.

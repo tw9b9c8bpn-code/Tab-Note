@@ -5,6 +5,7 @@
 
 import SwiftUI
 import AppKit
+import Combine
 
 struct NoteEditorView: NSViewRepresentable {
     @Binding var text: String
@@ -93,7 +94,6 @@ struct NoteEditorView: NSViewRepresentable {
             context.coordinator.lastNoteId = noteId
             if tabChanged {
                 context.coordinator.resetFontChoiceTracking()
-                textView.dismissInlineAnswerPopover()
             }
             context.coordinator.isProgrammaticUpdate = true
             let cursor = textView.selectedRanges
@@ -129,6 +129,7 @@ struct NoteEditorView: NSViewRepresentable {
             isDarkMode: settings.isDarkMode,
             force: contentChanged || tabChanged
         )
+        HighlightCapturingTextView.syncInlineAnswerPopoverAppearance(isDarkMode: settings.isDarkMode)
         context.coordinator.applyFontChoiceIfNeeded(to: textView, choice: settings.selectedFontEnum, force: tabChanged)
 
         context.coordinator.updateSearch(in: textView, query: searchQuery, requestID: searchRequestID)
@@ -147,7 +148,6 @@ struct NoteEditorView: NSViewRepresentable {
         private var lastSearchRequestID = 0
         private var pendingTripleQuestionTrigger = false
         private var pendingInlineTriggerLocation: Int?
-        private var inlineAnswerInFlight = false
         private var lastAppliedFontChoice: FontChoice?
         private var lastAppliedDarkMode: Bool?
 
@@ -242,10 +242,10 @@ struct NoteEditorView: NSViewRepresentable {
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             guard !isProgrammaticUpdate else { return false }
-            if commandSelector == #selector(NSResponder.cancelOperation(_:)), inlineAnswerInFlight {
-                inlineAnswerInFlight = false
+            if commandSelector == #selector(NSResponder.cancelOperation(_:)), AIService.shared.isRequestInFlight {
                 AIService.shared.cancelCurrentRequest()
-                publishInlineAIStatus("Cancelled", inFlight: false)
+                Self.publishInlineAIStatus("Cancelled", inFlight: false, windowID: parent.windowID)
+                HighlightCapturingTextView.finishSharedInlineAnswerStreaming()
                 return true
             }
             guard commandSelector == #selector(NSResponder.insertTab(_:)) else { return false }
@@ -283,57 +283,65 @@ struct NoteEditorView: NSViewRepresentable {
         }
 
         private func requestInlineAnswer(in textView: HighlightCapturingTextView, preferredLocation: Int? = nil) {
-            guard !inlineAnswerInFlight else {
-                publishInlineAIStatus("AI is already answering...", inFlight: true)
+            guard !AIService.shared.isRequestInFlight else {
+                Self.publishInlineAIStatus("AI is already answering...", inFlight: true, windowID: parent.windowID)
                 return
             }
             guard let context = currentParagraphContext(in: textView) else {
-                publishInlineAIStatus("No paragraph at cursor", inFlight: false)
+                Self.publishInlineAIStatus("No paragraph at cursor", inFlight: false, windowID: parent.windowID)
                 NSSound.beep()
                 return
             }
-            let requestNoteID = parent.noteId
-            inlineAnswerInFlight = true
-            publishInlineAIStatus("Reading paragraph...", inFlight: true)
+            let requestWindowID = parent.windowID
+            let summaryChip = parent.settings.aiPromptSummaryChip
+            let aiMode = parent.settings.aiModeEnum
+            let model = parent.settings.aiModel
+            let anchorLocation = preferredLocation ?? context.insertionLocation
+
+            HighlightCapturingTextView.beginSharedInlineAnswerStreaming(
+                summaryChip: summaryChip,
+                aiMode: aiMode,
+                model: model,
+                preferredLocation: anchorLocation,
+                in: textView
+            )
+            Self.publishInlineAIStatus("Reading paragraph...", inFlight: true, windowID: requestWindowID)
 
             AIService.shared.answerQuestionSentence(
                 sentence: context.paragraph,
                 settings: parent.settings,
-                onStatus: { [weak self] status in
+                onStatus: { status in
                     DispatchQueue.main.async {
-                        self?.publishInlineAIStatus(status, inFlight: true)
+                        Self.publishInlineAIStatus(status, inFlight: true, windowID: requestWindowID)
                     }
                 },
-                completion: { [weak self, weak textView] result in
+                onPartial: { partial in
                     DispatchQueue.main.async {
-                        guard let self else { return }
-                        self.inlineAnswerInFlight = false
-                        guard let textView else { return }
-                        guard self.parent.noteId == requestNoteID else {
-                            self.publishInlineAIStatus("Inline answer cancelled", inFlight: false)
-                            return
-                        }
+                        HighlightCapturingTextView.updateSharedInlineAnswerStreaming(
+                            Self.normalizeStreamingInlineAnswer(partial)
+                        )
+                    }
+                },
+                completion: { result in
+                    DispatchQueue.main.async {
                         switch result {
                         case .success(let raw):
-                            let answer = self.normalizeInlineAnswer(raw)
+                            let answer = Self.normalizeInlineAnswer(raw)
                             guard !answer.isEmpty else {
-                                self.publishInlineAIStatus("No answer generated", inFlight: false)
+                                HighlightCapturingTextView.dismissSharedInlineAnswerPopover()
+                                Self.publishInlineAIStatus("No answer generated", inFlight: false, windowID: requestWindowID)
                                 NSSound.beep()
                                 return
                             }
-                            textView.insertInlineAnswerMarkerAndShowPopover(
-                                answer,
-                                summaryChip: self.parent.settings.aiPromptSummaryChip,
-                                aiMode: self.parent.settings.aiModeEnum,
-                                model: self.parent.settings.aiModel,
-                                preferredLocation: preferredLocation ?? context.insertionLocation
-                            )
-                            self.publishInlineAIStatus("Answer ready", inFlight: false)
+                            HighlightCapturingTextView.completeSharedInlineAnswerStreaming(answer)
+                            Self.publishInlineAIStatus("Answer ready", inFlight: false, windowID: requestWindowID)
                         case .failure(let error):
                             if let aiError = error as? AIService.AIError, case .cancelled = aiError {
-                                self.publishInlineAIStatus("Cancelled", inFlight: false)
+                                HighlightCapturingTextView.finishSharedInlineAnswerStreaming()
+                                Self.publishInlineAIStatus("Cancelled", inFlight: false, windowID: requestWindowID)
                             } else {
-                                self.publishInlineAIStatus("Error: \(error.localizedDescription)", inFlight: false)
+                                HighlightCapturingTextView.finishSharedInlineAnswerStreaming()
+                                Self.publishInlineAIStatus("Error: \(error.localizedDescription)", inFlight: false, windowID: requestWindowID)
                             }
                         }
                     }
@@ -400,7 +408,7 @@ struct NoteEditorView: NSViewRepresentable {
             return paragraphRange.location + questionOnlyRange.location + questionOnlyRange.length
         }
 
-        private func normalizeInlineAnswer(_ raw: String) -> String {
+        private static func normalizeInlineAnswer(_ raw: String) -> String {
             var text = raw
                 .replacingOccurrences(of: "\r\n", with: "\n")
                 .replacingOccurrences(of: "\r", with: "\n")
@@ -433,10 +441,16 @@ struct NoteEditorView: NSViewRepresentable {
             return text.trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
-        private func publishInlineAIStatus(_ status: String, inFlight: Bool) {
+        private static func normalizeStreamingInlineAnswer(_ raw: String) -> String {
+            raw
+                .replacingOccurrences(of: "\r\n", with: "\n")
+                .replacingOccurrences(of: "\r", with: "\n")
+        }
+
+        private static func publishInlineAIStatus(_ status: String, inFlight: Bool, windowID: String) {
             NotificationCenter.default.post(
                 name: .inlineAIStatusDidChange,
-                object: parent.windowID,
+                object: windowID,
                 userInfo: [
                     "status": status,
                     "inFlight": inFlight
@@ -558,7 +572,7 @@ class HighlightCapturingTextView: NSTextView {
 
     var onThemeSelected: ((String) -> Void)?
     var onRichTextChange: ((Data?) -> Void)?
-    private var inlineAnswerPanel: NSPanel?
+    private static let inlineAnswerController = InlineAnswerPanelController.shared
     private static let inlineAnswerMarkerPrefix = "tabnote-ai:"
 
     private struct InlineAnswerPayload: Codable {
@@ -577,10 +591,6 @@ class HighlightCapturingTextView: NSTextView {
         var aiMode: AIMode {
             AIMode(rawValue: aiModeRawValue) ?? .local
         }
-    }
-
-    deinit {
-        inlineAnswerPanel?.close()
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -665,6 +675,44 @@ class HighlightCapturingTextView: NSTextView {
         deleteInlineAnswerMarker(at: sender.tag)
     }
 
+    static func beginSharedInlineAnswerStreaming(
+        summaryChip: String,
+        aiMode: AIMode,
+        model: String,
+        preferredLocation: Int,
+        in textView: HighlightCapturingTextView
+    ) {
+        let maxLocation = max(0, (textView.string as NSString).length - 1)
+        let anchorCharacterIndex = max(0, min(preferredLocation, maxLocation))
+        let anchorRect = textView.screenRect(for: textView.characterRect(for: anchorCharacterIndex))
+        inlineAnswerController.beginStreaming(
+            summaryChip: summaryChip,
+            aiMode: aiMode,
+            model: model,
+            anchorScreenRect: anchorRect
+        )
+    }
+
+    static func updateSharedInlineAnswerStreaming(_ answer: String) {
+        inlineAnswerController.updateStreamingAnswer(answer)
+    }
+
+    static func completeSharedInlineAnswerStreaming(_ answer: String) {
+        inlineAnswerController.completeStreaming(with: answer)
+    }
+
+    static func finishSharedInlineAnswerStreaming() {
+        inlineAnswerController.finishStreaming()
+    }
+
+    static func dismissSharedInlineAnswerPopover() {
+        inlineAnswerController.close()
+    }
+
+    static func syncInlineAnswerPopoverAppearance(isDarkMode: Bool) {
+        inlineAnswerController.syncAppearance(isDarkMode: isDarkMode)
+    }
+
     func insertInlineAnswerMarkerAndShowPopover(
         _ answer: String,
         summaryChip: String,
@@ -688,68 +736,21 @@ class HighlightCapturingTextView: NSTextView {
     }
 
     func dismissInlineAnswerPopover() {
-        closeInlineAnswerPopover()
+        Self.inlineAnswerController.close()
     }
 
     private func closeInlineAnswerPopover() {
-        inlineAnswerPanel?.orderOut(nil)
-        inlineAnswerPanel?.close()
-        inlineAnswerPanel = nil
+        Self.inlineAnswerController.close()
     }
 
     private func showInlineAnswerPopover(payload: InlineAnswerPayload, anchorCharacterIndex: Int) {
-        closeInlineAnswerPopover()
-        let anchor = characterRect(for: anchorCharacterIndex)
-        presentInlineAnswerPopover(payload: payload, anchorRect: anchor)
-    }
-
-    private func presentInlineAnswerPopover(payload: InlineAnswerPayload, anchorRect: NSRect) {
-        let preparedAnswer = InlineCursorAnswerPopoverView.preparedAnswerText(from: payload.answer)
-        let renderedAnswer = InlineCursorAnswerPopoverView.renderedAttributedString(from: preparedAnswer)
-        let metrics = InlineCursorAnswerPopoverView.responseMetrics(
-            for: preparedAnswer,
-            aiMode: payload.aiMode,
-            model: payload.model
-        )
-        let size = popoverSize(for: renderedAnswer)
-        let view = InlineCursorAnswerPopoverView(
-            renderedAnswer: renderedAnswer,
+        Self.inlineAnswerController.present(
+            answer: payload.answer,
             summaryChip: payload.summaryChip,
-            metrics: metrics,
+            aiMode: payload.aiMode,
             model: payload.model,
-            contentSize: size
+            anchorScreenRect: screenRect(for: characterRect(for: anchorCharacterIndex))
         )
-        let host = NSHostingController(rootView: view)
-        let panel = ActivatingPanel(
-            contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
-        panel.isFloatingPanel = true
-        panel.hidesOnDeactivate = false
-        panel.level = .floating
-        panel.isReleasedWhenClosed = false
-        panel.appearance = NSAppearance(named: SettingsManager.shared.isDarkMode ? .darkAqua : .aqua)
-        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        panel.standardWindowButton(.zoomButton)?.isHidden = true
-        panel.contentViewController = host
-        panel.contentMinSize = NSSize(width: 220, height: 120)
-        panel.contentMaxSize = NSSize(width: 380, height: 600)
-
-        let screenFrame = window?.screen?.visibleFrame
-            ?? NSScreen.main?.visibleFrame
-            ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let anchorOnWindow = convert(anchorRect, to: nil)
-        let anchorOnScreen = window?.convertToScreen(anchorOnWindow) ?? anchorOnWindow
-        let x = min(screenFrame.maxX - size.width - 16, anchorOnScreen.maxX + 10)
-        let idealY = anchorOnScreen.maxY - (size.height * 0.18)
-        let y = max(screenFrame.minY + 24, min(screenFrame.maxY - size.height - 24, idealY))
-        panel.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: false)
-        panel.makeKeyAndOrderFront(nil)
-        inlineAnswerPanel = panel
     }
 
     private func caretAnchorRect() -> NSRect {
@@ -789,6 +790,11 @@ class HighlightCapturingTextView: NSTextView {
         rect.size.width = max(rect.width, 12)
         rect.size.height = max(rect.height, 16)
         return rect
+    }
+
+    private func screenRect(for anchorRect: NSRect) -> NSRect {
+        let anchorOnWindow = convert(anchorRect, to: nil)
+        return window?.convertToScreen(anchorOnWindow) ?? anchorOnWindow
     }
 
     private func characterIndex(at pointInView: NSPoint) -> Int? {
@@ -976,48 +982,6 @@ class HighlightCapturingTextView: NSTextView {
             location = range.location + range.length
         }
         return location
-    }
-
-    private func popoverSize(for attributedText: NSAttributedString) -> NSSize {
-        let candidateWidths: [CGFloat]
-        switch attributedText.string.count {
-        case 0...70:
-            candidateWidths = [220, 250, 280]
-        case 71...160:
-            candidateWidths = [250, 290, 330]
-        case 161...320:
-            candidateWidths = [280, 320, 360]
-        default:
-            candidateWidths = [300, 340, 380]
-        }
-
-        let chromeHeight: CGFloat = 92
-        let minHeight: CGFloat = 120
-        let maxHeight: CGFloat = 600
-
-        var bestWidth = candidateWidths.last ?? 380
-        var bestHeight = maxHeight
-        var smallestOverflow = CGFloat.greatestFiniteMagnitude
-
-        for width in candidateWidths {
-            let contentWidth = max(164, width - 28)
-            let measured = attributedText.boundingRect(
-                with: NSSize(width: contentWidth, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading]
-            )
-            let targetHeight = chromeHeight + ceil(measured.height)
-            if targetHeight <= maxHeight {
-                return NSSize(width: width, height: max(minHeight, targetHeight))
-            }
-            let overflow = targetHeight - maxHeight
-            if overflow < smallestOverflow {
-                smallestOverflow = overflow
-                bestWidth = width
-                bestHeight = maxHeight
-            }
-        }
-
-        return NSSize(width: bestWidth, height: bestHeight)
     }
 
     func applyFontFamily(_ choice: FontChoice) {
@@ -1328,8 +1292,192 @@ class HighlightCapturingTextView: NSTextView {
 
 }
 
+private final class InlineAnswerPanelModel: ObservableObject {
+    @Published var rawAnswer: String = ""
+    @Published var summaryChip: String = ""
+    @Published var model: String = ""
+    @Published var aiMode: AIMode = .local
+    @Published var contentSize: NSSize = NSSize(width: 220, height: 120)
+    @Published var isStreaming = false
+
+    var hasVisibleContent: Bool {
+        !rawAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    func reset() {
+        rawAnswer = ""
+        isStreaming = false
+        contentSize = NSSize(width: 220, height: 120)
+    }
+}
+
+private final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
+    static let shared = InlineAnswerPanelController()
+
+    let model = InlineAnswerPanelModel()
+    private var panel: ActivatingPanel?
+    private var anchorScreenRect: NSRect?
+    private var isSuppressed = false
+
+    func beginStreaming(summaryChip: String, aiMode: AIMode, model: String, anchorScreenRect: NSRect) {
+        configure(summaryChip: summaryChip, aiMode: aiMode, model: model, anchorScreenRect: anchorScreenRect)
+        self.model.rawAnswer = ""
+        self.model.isStreaming = true
+        self.model.contentSize = InlineCursorAnswerPopoverView.preferredSize(for: "", isStreaming: true)
+        presentPanel(useAnchor: true)
+    }
+
+    func updateStreamingAnswer(_ answer: String) {
+        guard !isSuppressed else { return }
+        model.rawAnswer = answer
+        model.isStreaming = true
+        refreshPanelLayout(useAnchor: false)
+    }
+
+    func completeStreaming(with answer: String) {
+        guard !isSuppressed else { return }
+        model.rawAnswer = answer
+        model.isStreaming = false
+        refreshPanelLayout(useAnchor: false)
+    }
+
+    func finishStreaming() {
+        guard !isSuppressed else { return }
+        if model.hasVisibleContent {
+            model.isStreaming = false
+            refreshPanelLayout(useAnchor: false)
+        } else {
+            close()
+        }
+    }
+
+    func present(answer: String, summaryChip: String, aiMode: AIMode, model: String, anchorScreenRect: NSRect) {
+        configure(summaryChip: summaryChip, aiMode: aiMode, model: model, anchorScreenRect: anchorScreenRect)
+        self.model.rawAnswer = answer
+        self.model.isStreaming = false
+        self.model.contentSize = InlineCursorAnswerPopoverView.preferredSize(for: answer, isStreaming: false)
+        presentPanel(useAnchor: true)
+    }
+
+    func close() {
+        isSuppressed = true
+        panel?.orderOut(nil)
+        panel?.close()
+        panel = nil
+        anchorScreenRect = nil
+        model.reset()
+    }
+
+    func syncAppearance(isDarkMode: Bool) {
+        let appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+        panel?.appearance = appearance
+        panel?.contentViewController?.view.appearance = appearance
+        panel?.displayIfNeeded()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let closingWindow = notification.object as? NSWindow,
+              closingWindow == panel else { return }
+        panel = nil
+        anchorScreenRect = nil
+        isSuppressed = true
+        model.reset()
+    }
+
+    private func configure(summaryChip: String, aiMode: AIMode, model: String, anchorScreenRect: NSRect) {
+        isSuppressed = false
+        self.anchorScreenRect = anchorScreenRect
+        self.model.summaryChip = summaryChip
+        self.model.aiMode = aiMode
+        self.model.model = model
+    }
+
+    private func presentPanel(useAnchor: Bool) {
+        ensurePanel()
+        syncAppearance(isDarkMode: SettingsManager.shared.isDarkMode)
+        refreshPanelLayout(useAnchor: useAnchor)
+        panel?.makeKeyAndOrderFront(nil)
+    }
+
+    private func ensurePanel() {
+        guard panel == nil else { return }
+
+        let host = NSHostingController(rootView: InlineCursorAnswerPopoverView(model: model))
+        let newPanel = ActivatingPanel(
+            contentRect: NSRect(origin: .zero, size: model.contentSize),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        newPanel.titleVisibility = .hidden
+        newPanel.titlebarAppearsTransparent = true
+        newPanel.isFloatingPanel = true
+        newPanel.hidesOnDeactivate = false
+        newPanel.level = .floating
+        newPanel.isReleasedWhenClosed = false
+        newPanel.contentMinSize = NSSize(width: 220, height: 120)
+        newPanel.contentMaxSize = NSSize(width: 380, height: 600)
+        newPanel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        newPanel.standardWindowButton(.zoomButton)?.isHidden = true
+        newPanel.contentViewController = host
+        newPanel.delegate = self
+        panel = newPanel
+    }
+
+    private func refreshPanelLayout(useAnchor: Bool) {
+        guard !isSuppressed else { return }
+        guard let panel else { return }
+
+        let preferredSize = InlineCursorAnswerPopoverView.preferredSize(
+            for: model.rawAnswer,
+            isStreaming: model.isStreaming
+        )
+        model.contentSize = preferredSize
+
+        var targetSize = preferredSize
+        if panel.isVisible {
+            targetSize.width = min(380, max(preferredSize.width, panel.frame.width))
+            targetSize.height = min(600, max(preferredSize.height, panel.frame.height))
+        }
+
+        let screenFrame = panel.screen?.visibleFrame
+            ?? NSScreen.main?.visibleFrame
+            ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let targetFrame: NSRect
+        if useAnchor, let anchorScreenRect {
+            targetFrame = anchoredFrame(
+                for: targetSize,
+                screenFrame: screenFrame,
+                anchorScreenRect: anchorScreenRect
+            )
+        } else {
+            targetFrame = clampedFrame(
+                origin: panel.frame.origin,
+                size: targetSize,
+                screenFrame: screenFrame
+            )
+        }
+
+        panel.setFrame(targetFrame, display: true, animate: false)
+    }
+
+    private func anchoredFrame(for size: NSSize, screenFrame: NSRect, anchorScreenRect: NSRect) -> NSRect {
+        let x = min(screenFrame.maxX - size.width - 16, anchorScreenRect.maxX + 10)
+        let idealY = anchorScreenRect.maxY - (size.height * 0.18)
+        let y = max(screenFrame.minY + 24, min(screenFrame.maxY - size.height - 24, idealY))
+        return NSRect(x: x, y: y, width: size.width, height: size.height)
+    }
+
+    private func clampedFrame(origin: NSPoint, size: NSSize, screenFrame: NSRect) -> NSRect {
+        let x = max(screenFrame.minX + 16, min(origin.x, screenFrame.maxX - size.width - 16))
+        let y = max(screenFrame.minY + 24, min(origin.y, screenFrame.maxY - size.height - 24))
+        return NSRect(x: x, y: y, width: size.width, height: size.height)
+    }
+}
+
 private struct InlineCursorAnswerPopoverView: View {
     @ObservedObject private var settings = SettingsManager.shared
+    @ObservedObject var model: InlineAnswerPanelModel
     @State private var showPricingPopover = false
 
     struct ResponseMetrics {
@@ -1337,12 +1485,6 @@ private struct InlineCursorAnswerPopoverView: View {
         let tokens: Int
         let estimatedCost: Double
     }
-
-    let renderedAnswer: NSAttributedString
-    let summaryChip: String
-    let metrics: ResponseMetrics
-    let model: String
-    let contentSize: NSSize
 
     static func preparedAnswerText(from raw: String) -> String {
         var text = raw
@@ -1373,8 +1515,12 @@ private struct InlineCursorAnswerPopoverView: View {
     }
 
     static func responseMetrics(for text: String, aiMode: AIMode, model: String) -> ResponseMetrics {
-        let words = max(1, text.split(whereSeparator: \.isWhitespace).count)
-        let nonWhitespaceChars = text.filter { !$0.isWhitespace }.count
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return ResponseMetrics(words: 0, tokens: 0, estimatedCost: 0)
+        }
+        let words = trimmed.split(whereSeparator: \.isWhitespace).count
+        let nonWhitespaceChars = trimmed.filter { !$0.isWhitespace }.count
         let byChars = Int(ceil(Double(nonWhitespaceChars) / 4.0))
         let byWords = Int(ceil(Double(words) * 1.33))
         let tokens = max(1, max(byChars, byWords))
@@ -1383,6 +1529,54 @@ private struct InlineCursorAnswerPopoverView: View {
             ? 0
             : (Double(tokens) * ratePerMillion) / 1_000_000.0
         return ResponseMetrics(words: words, tokens: tokens, estimatedCost: estimatedCost)
+    }
+
+    static func preferredSize(for raw: String, isStreaming: Bool) -> NSSize {
+        let attributedText = displayedAttributedString(for: raw, isStreaming: isStreaming)
+
+        let candidateWidths: [CGFloat]
+        switch attributedText.string.count {
+        case 0...70:
+            candidateWidths = [220, 250, 280]
+        case 71...160:
+            candidateWidths = [250, 290, 330]
+        case 161...320:
+            candidateWidths = [280, 320, 360]
+        default:
+            candidateWidths = [300, 340, 380]
+        }
+
+        let chromeHeight: CGFloat = 92
+        let minHeight: CGFloat = 120
+        let maxHeight: CGFloat = 600
+
+        var bestWidth = candidateWidths.last ?? 380
+        var bestHeight = maxHeight
+        var smallestOverflow = CGFloat.greatestFiniteMagnitude
+
+        for width in candidateWidths {
+            let contentWidth = max(164, width - 28)
+            let measured = attributedText.boundingRect(
+                with: NSSize(width: contentWidth, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading]
+            )
+            let targetHeight = chromeHeight + ceil(measured.height)
+            if targetHeight <= maxHeight {
+                return NSSize(width: width, height: max(minHeight, targetHeight))
+            }
+            let overflow = targetHeight - maxHeight
+            if overflow < smallestOverflow {
+                smallestOverflow = overflow
+                bestWidth = width
+                bestHeight = maxHeight
+            }
+        }
+
+        return NSSize(width: bestWidth, height: bestHeight)
+    }
+
+    static func displayedAttributedString(for raw: String, isStreaming: Bool) -> NSAttributedString {
+        isStreaming ? streamingAttributedString(from: raw) : renderedAttributedString(from: raw)
     }
 
     static func renderedAttributedString(from raw: String) -> NSAttributedString {
@@ -1400,6 +1594,22 @@ private struct InlineCursorAnswerPopoverView: View {
             output.append(renderedBlock(block))
         }
         return output
+    }
+
+    static func streamingAttributedString(from raw: String) -> NSAttributedString {
+        let normalized = raw
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        let displayText = normalized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Thinking..." : normalized
+        let color = displayText == "Thinking..." ? NSColor.secondaryLabelColor : NSColor.labelColor
+        return NSAttributedString(
+            string: displayText,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 12),
+                .foregroundColor: color,
+                .paragraphStyle: defaultParagraphStyle()
+            ]
+        )
     }
 
     private static func renderedBlock(_ block: String) -> NSAttributedString {
@@ -1781,6 +1991,18 @@ private struct InlineCursorAnswerPopoverView: View {
         return String(format: "$%.4f", positive)
     }
 
+    private var displayAttributedAnswer: NSAttributedString {
+        Self.displayedAttributedString(for: model.rawAnswer, isStreaming: model.isStreaming)
+    }
+
+    private var metrics: ResponseMetrics {
+        Self.responseMetrics(
+            for: Self.preparedAnswerText(from: model.rawAnswer),
+            aiMode: model.aiMode,
+            model: model.model
+        )
+    }
+
     private var metricsLine: String {
         "\(metrics.words)w • ~\(metrics.tokens)t • \(Self.formattedCost(metrics.estimatedCost))"
     }
@@ -1800,7 +2022,7 @@ private struct InlineCursorAnswerPopoverView: View {
     }
 
     private var activeModelLabel: String {
-        let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = model.model.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "Unknown model" : trimmed
     }
 
@@ -1823,9 +2045,9 @@ private struct InlineCursorAnswerPopoverView: View {
     private func copyAllToPasteboard() {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(renderedAnswer.string, forType: .string)
-        if let rtf = try? renderedAnswer.data(
-            from: NSRange(location: 0, length: renderedAnswer.length),
+        pasteboard.setString(displayAttributedAnswer.string, forType: .string)
+        if let rtf = try? displayAttributedAnswer.data(
+            from: NSRange(location: 0, length: displayAttributedAnswer.length),
             documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
         ) {
             pasteboard.setData(rtf, forType: .rtf)
@@ -1835,7 +2057,7 @@ private struct InlineCursorAnswerPopoverView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 8) {
-                Text(summaryChip)
+                Text(model.summaryChip.isEmpty ? "AI" : model.summaryChip)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
@@ -1869,10 +2091,10 @@ private struct InlineCursorAnswerPopoverView: View {
             }
 
             SelectableAttributedTextView(
-                attributedText: renderedAnswer,
+                attributedText: displayAttributedAnswer,
                 isDarkMode: settings.isDarkMode
             )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
@@ -1899,10 +2121,10 @@ private struct InlineCursorAnswerPopoverView: View {
         .background(PanelAppearanceSyncView(isDarkMode: settings.isDarkMode))
         .frame(
             minWidth: 220,
-            idealWidth: contentSize.width,
+            idealWidth: model.contentSize.width,
             maxWidth: .infinity,
             minHeight: 120,
-            idealHeight: contentSize.height,
+            idealHeight: model.contentSize.height,
             maxHeight: .infinity
         )
     }
@@ -1918,8 +2140,9 @@ private struct SelectableAttributedTextView: NSViewRepresentable {
         scrollView.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
         scrollView.borderType = .noBorder
         scrollView.hasHorizontalScroller = false
-        scrollView.hasVerticalScroller = true
+        scrollView.hasVerticalScroller = false
         scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
 
         let textView = NSTextView()
         textView.isEditable = false

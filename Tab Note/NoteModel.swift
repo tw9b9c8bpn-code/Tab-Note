@@ -327,6 +327,24 @@ class NotesStore: ObservableObject {
         objectWillChange.send()
     }
 
+    func selectAdjacentTab(by delta: Int, in windowID: String = NotesStore.mainWindowID) {
+        guard delta != 0 else { return }
+        let windowNotes = notes(in: windowID)
+        let ordered = windowNotes.filter(\.isPinned).sorted { $0.order < $1.order }
+                    + windowNotes.filter { !$0.isPinned }.sorted { $0.order < $1.order }
+        guard !ordered.isEmpty else { return }
+
+        guard let currentID = selectedNoteId(in: windowID),
+              let currentIndex = ordered.firstIndex(where: { $0.id == currentID }) else {
+            setSelectedNoteId(ordered.first?.id, in: windowID)
+            return
+        }
+
+        let nextIndex = max(0, min(ordered.count - 1, currentIndex + delta))
+        guard nextIndex != currentIndex else { return }
+        setSelectedNoteId(ordered[nextIndex].id, in: windowID)
+    }
+
 
     func recoverLastDeletedNote() {
         guard let deleted = lastDeletedNote else { return }
@@ -480,7 +498,7 @@ private extension CGPoint {
 
 extension NSColor {
     convenience init?(hex: String) {
-        var h = hex.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "#", with: "")
+        let h = hex.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "#", with: "")
         guard h.count == 6 else { return nil }
         var rgb: UInt64 = 0
         Scanner(string: h).scanHexInt64(&rgb)

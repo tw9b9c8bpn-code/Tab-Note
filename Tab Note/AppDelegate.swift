@@ -209,6 +209,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
                 NotificationCenter.default.post(name: .toggleAIPanel, object: windowID); return nil
             }
 
+            if arrowFlags == [.command, .option, .shift] && event.keyCode == 123 {   // Cmd+Opt+Shift+Left
+                self.notesStore.selectAdjacentTab(by: -1, in: windowID)
+                return nil
+            }
+            if arrowFlags == [.command, .option, .shift] && event.keyCode == 124 {   // Cmd+Opt+Shift+Right
+                self.notesStore.selectAdjacentTab(by: 1, in: windowID)
+                return nil
+            }
+
             // ⌘⌥← / ⌘⌥→  — move active tab left / right
             // Must use arrowFlags (stripped), not flags, because arrow keys set .numericPad + .function
             if arrowFlags == [.command, .option] && event.keyCode == 123 {   // ←

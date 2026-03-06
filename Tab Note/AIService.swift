@@ -16,7 +16,12 @@ enum AIAction: String {
 class AIService {
     static let shared = AIService()
     private var currentTask: URLSessionDataTask?
+    private var currentStreamingTask: Task<Void, Never>?
     private init() {}
+
+    var isRequestInFlight: Bool {
+        currentTask != nil || currentStreamingTask != nil
+    }
 
     enum AIError: LocalizedError {
         case noEndpoint, invalidURL, noAPIKey
@@ -39,6 +44,8 @@ class AIService {
     func cancelCurrentRequest() {
         currentTask?.cancel()
         currentTask = nil
+        currentStreamingTask?.cancel()
+        currentStreamingTask = nil
     }
 
     // MARK: - Generate
@@ -130,6 +137,7 @@ class AIService {
         sentence: String,
         settings: SettingsManager,
         onStatus: @escaping (String) -> Void,
+        onPartial: @escaping (String) -> Void = { _ in },
         completion: @escaping (Result<String, Error>) -> Void
     ) {
         let question = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -187,7 +195,9 @@ class AIService {
                 model: settings.aiModel.isEmpty ? "llama3" : settings.aiModel,
                 systemPrompt: systemPrompt,
                 userMessage: userMessage,
+                streamResponse: true,
                 onStatus: onStatus,
+                onPartial: onPartial,
                 completion: completion
             )
         case .api:
@@ -199,7 +209,9 @@ class AIService {
                 userMessage: userMessage,
                 temperature: 0.3,
                 maxTokens: maxTokens,
+                streamResponse: true,
                 onStatus: onStatus,
+                onPartial: onPartial,
                 completion: completion
             )
         }
@@ -257,20 +269,29 @@ class AIService {
     // MARK: - Ollama
 
     private func callOllama(endpoint: String, model: String, systemPrompt: String, userMessage: String,
+                            streamResponse: Bool = false,
                             onStatus: @escaping (String) -> Void,
+                            onPartial: ((String) -> Void)? = nil,
                             completion: @escaping (Result<String, Error>) -> Void) {
         let base = endpoint.isEmpty ? "http://localhost:11434" : endpoint
         guard let url = URL(string: "\(base)/api/chat") else { completion(.failure(AIError.invalidURL)); return }
-        onStatus("Connecting to Ollama...")
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.timeoutInterval = 180
-        req.httpBody = try? JSONSerialization.data(withJSONObject: [
+        let body: [String: Any] = [
             "model": model,
             "messages": [["role": "system", "content": systemPrompt], ["role": "user", "content": userMessage]],
-            "stream": false
-        ])
+            "stream": streamResponse
+        ]
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        if streamResponse {
+            streamOllama(request: req, model: model, onStatus: onStatus, onPartial: onPartial, completion: completion)
+            return
+        }
+
+        onStatus("Connecting to Ollama...")
         onStatus("Generating with \(model)...")
         var task: URLSessionDataTask?
         task = URLSession.shared.dataTask(with: req) { [weak self] data, _, error in
@@ -306,22 +327,33 @@ class AIService {
                                       systemPrompt: String, userMessage: String,
                                       temperature: Double = 0.7,
                                       maxTokens: Int = 1024,
+                                      streamResponse: Bool = false,
                                       onStatus: @escaping (String) -> Void,
+                                      onPartial: ((String) -> Void)? = nil,
                                       completion: @escaping (Result<String, Error>) -> Void) {
         guard !apiKey.isEmpty else { completion(.failure(AIError.noAPIKey)); return }
         let base = endpoint.isEmpty ? "https://api.openai.com/v1" : endpoint
         guard let url = URL(string: "\(base)/chat/completions") else { completion(.failure(AIError.invalidURL)); return }
-        onStatus("Connecting to API...")
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         req.timeoutInterval = 180
-        req.httpBody = try? JSONSerialization.data(withJSONObject: [
+        let body: [String: Any] = [
             "model": model,
             "messages": [["role": "system", "content": systemPrompt], ["role": "user", "content": userMessage]],
-            "temperature": temperature, "max_tokens": maxTokens
-        ])
+            "temperature": temperature,
+            "max_tokens": maxTokens,
+            "stream": streamResponse
+        ]
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        if streamResponse {
+            streamOpenAICompatible(request: req, model: model, onStatus: onStatus, onPartial: onPartial, completion: completion)
+            return
+        }
+
+        onStatus("Connecting to API...")
         onStatus("Generating with \(model)...")
         var task: URLSessionDataTask?
         task = URLSession.shared.dataTask(with: req) { [weak self] data, _, error in
@@ -346,5 +378,199 @@ class AIService {
         }
         currentTask = task
         task?.resume()
+    }
+
+    private func streamOllama(
+        request: URLRequest,
+        model: String,
+        onStatus: @escaping (String) -> Void,
+        onPartial: ((String) -> Void)?,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        onStatus("Connecting to Ollama...")
+        onStatus("Streaming with \(model)...")
+
+        currentStreamingTask = Task { [weak self] in
+            var aggregated = ""
+            do {
+                let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                guard let http = response as? HTTPURLResponse else {
+                    throw AIError.invalidResponse
+                }
+                guard (200..<300).contains(http.statusCode) else {
+                    throw AIError.requestFailed("HTTP \(http.statusCode)")
+                }
+
+                for try await line in bytes.lines {
+                    try Task.checkCancellation()
+                    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { continue }
+                    guard let content = try self?.ollamaContentChunk(from: trimmed), !content.isEmpty else { continue }
+                    aggregated += content
+                    if let onPartial {
+                        await MainActor.run { onPartial(aggregated) }
+                    }
+                }
+
+                let finalText = aggregated.trimmingCharacters(in: .whitespacesAndNewlines)
+                await MainActor.run {
+                    self?.currentStreamingTask = nil
+                    if finalText.isEmpty {
+                        completion(.failure(AIError.noContent))
+                    } else {
+                        completion(.success(finalText))
+                    }
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    self?.currentStreamingTask = nil
+                    completion(.failure(AIError.cancelled))
+                }
+            } catch let error as AIError {
+                await MainActor.run {
+                    self?.currentStreamingTask = nil
+                    completion(.failure(error))
+                }
+            } catch {
+                await MainActor.run {
+                    self?.currentStreamingTask = nil
+                    completion(.failure(AIError.requestFailed(error.localizedDescription)))
+                }
+            }
+        }
+    }
+
+    private func streamOpenAICompatible(
+        request: URLRequest,
+        model: String,
+        onStatus: @escaping (String) -> Void,
+        onPartial: ((String) -> Void)?,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        onStatus("Connecting to API...")
+        onStatus("Streaming with \(model)...")
+
+        currentStreamingTask = Task { [weak self] in
+            var aggregated = ""
+            do {
+                let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                guard let http = response as? HTTPURLResponse else {
+                    throw AIError.invalidResponse
+                }
+                guard (200..<300).contains(http.statusCode) else {
+                    throw AIError.requestFailed("HTTP \(http.statusCode)")
+                }
+
+                streamLoop: for try await line in bytes.lines {
+                    try Task.checkCancellation()
+                    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { continue }
+                    let event = try self?.openAIStreamEvent(from: trimmed) ?? .none
+                    switch event {
+                    case .none:
+                        continue
+                    case .done:
+                        break streamLoop
+                    case .content(let content):
+                        guard !content.isEmpty else { continue }
+                        aggregated += content
+                        if let onPartial {
+                            await MainActor.run { onPartial(aggregated) }
+                        }
+                    }
+                }
+
+                let finalText = aggregated.trimmingCharacters(in: .whitespacesAndNewlines)
+                await MainActor.run {
+                    self?.currentStreamingTask = nil
+                    if finalText.isEmpty {
+                        completion(.failure(AIError.noContent))
+                    } else {
+                        completion(.success(finalText))
+                    }
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    self?.currentStreamingTask = nil
+                    completion(.failure(AIError.cancelled))
+                }
+            } catch let error as AIError {
+                await MainActor.run {
+                    self?.currentStreamingTask = nil
+                    completion(.failure(error))
+                }
+            } catch {
+                await MainActor.run {
+                    self?.currentStreamingTask = nil
+                    completion(.failure(AIError.requestFailed(error.localizedDescription)))
+                }
+            }
+        }
+    }
+
+    private func ollamaContentChunk(from line: String) throws -> String? {
+        guard let data = line.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+
+        if let error = json["error"] as? String {
+            throw AIError.requestFailed(error)
+        }
+        if let message = json["message"] as? [String: Any],
+           let content = message["content"] as? String {
+            return content
+        }
+        if let response = json["response"] as? String {
+            return response
+        }
+        return nil
+    }
+
+    private enum OpenAIStreamEvent {
+        case content(String)
+        case done
+        case none
+    }
+
+    private func openAIStreamEvent(from line: String) throws -> OpenAIStreamEvent {
+        let payload: String
+        if line.hasPrefix("data:") {
+            payload = line.dropFirst(5).trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            payload = line
+        }
+
+        guard !payload.isEmpty else { return .none }
+        if payload == "[DONE]" { return .done }
+
+        guard let data = payload.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return .none
+        }
+
+        if let error = json["error"] as? [String: Any],
+           let message = error["message"] as? String {
+            throw AIError.requestFailed(message)
+        }
+        if let error = json["error"] as? String {
+            throw AIError.requestFailed(error)
+        }
+        if let choices = json["choices"] as? [[String: Any]],
+           let first = choices.first {
+            if let delta = first["delta"] as? [String: Any],
+               let content = delta["content"] as? String {
+                return .content(content)
+            }
+            if let message = first["message"] as? [String: Any],
+               let content = message["content"] as? String {
+                return .content(content)
+            }
+            if let finishReason = first["finish_reason"] as? String,
+               !finishReason.isEmpty {
+                return .done
+            }
+        }
+        return .none
     }
 }
