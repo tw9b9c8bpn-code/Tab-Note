@@ -31,6 +31,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
     private var autoCheckMenuItem: NSMenuItem?
     private var updateStatusMenuItem: NSMenuItem?
     private var panelsByWindowID: [String: NSPanel] = [:]
+    private var settingsPanel: ActivatingPanel?
+    private var shouldRestoreSettingsPanelOnReveal = false
+    private let settingsPanelIdentifier = NSUserInterfaceItemIdentifier("settingsPanel")
 
     static var shared: AppDelegate?
 
@@ -116,11 +119,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         if !panelsByWindowID.values.contains(where: { $0.isVisible }) {
             showAllPanels()
         }
-
-        let windowID = currentWindowIDForKeyEvents()
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(name: .showFloatingSettings, object: windowID)
-        }
+        showSettingsPanel()
     }
     @objc func newNote() { notesStore.createNote() }
     @objc func checkUpdates() { AppUpdater.shared.checkForUpdates() }
@@ -272,12 +271,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
 
     // NSWindowDelegate — enforce minimum size (borderless panels ignore minSize)
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
-        NSSize(width: max(300, frameSize.width), height: max(240, frameSize.height))
+        if sender == settingsPanel {
+            return NSSize(width: max(560, frameSize.width), height: max(520, frameSize.height))
+        }
+        return NSSize(width: max(300, frameSize.width), height: max(240, frameSize.height))
+    }
+
+    func windowDidEndLiveResize(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window == settingsPanel else { return }
+        persistSettingsPanelSize(from: window)
     }
 
     func windowWillClose(_ notification: Notification) {
-        guard let closedWindow = notification.object as? NSWindow,
-              let windowID = windowID(for: closedWindow) else { return }
+        guard let closedWindow = notification.object as? NSWindow else { return }
+
+        if closedWindow == settingsPanel {
+            persistSettingsPanelSize(from: closedWindow)
+            shouldRestoreSettingsPanelOnReveal = false
+            settingsPanel = nil
+            return
+        }
+
+        guard let windowID = windowID(for: closedWindow) else { return }
 
         panelsByWindowID.removeValue(forKey: windowID)
         notesStore.removeTabBarFrame(for: windowID)
@@ -338,6 +353,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         for panel in panelsByWindowID.values {
             panel.orderOut(nil)
         }
+        if let settingsPanel {
+            shouldRestoreSettingsPanelOnReveal = settingsPanel.isVisible
+            if shouldRestoreSettingsPanelOnReveal {
+                persistSettingsPanelSize(from: settingsPanel)
+                settingsPanel.orderOut(nil)
+            }
+        }
         InlineAnswerPanelController.shared.setTemporarilyHiddenByApp(true)
     }
 
@@ -359,6 +381,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
 
         for entry in orderedPanels.reversed() {
             entry.panel.makeKeyAndOrderFront(nil)
+        }
+
+        if shouldRestoreSettingsPanelOnReveal {
+            let settingsPanel = ensureSettingsPanel()
+            settingsPanel.makeKeyAndOrderFront(nil)
         }
 
         InlineAnswerPanelController.shared.setTemporarilyHiddenByApp(false)
@@ -450,6 +477,83 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         newPanel.contentView?.layer?.masksToBounds = true
         newPanel.delegate = self
         return newPanel
+    }
+
+    private func showSettingsPanel() {
+        let panel = ensureSettingsPanel()
+        if !panel.isVisible {
+            positionSettingsPanel(panel, relativeTo: NSApp.keyWindow)
+        }
+        shouldRestoreSettingsPanelOnReveal = true
+        panel.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func closeSettingsPanel() {
+        guard let settingsPanel else { return }
+        persistSettingsPanelSize(from: settingsPanel)
+        shouldRestoreSettingsPanelOnReveal = false
+        settingsPanel.orderOut(nil)
+    }
+
+    private func ensureSettingsPanel() -> ActivatingPanel {
+        if let settingsPanel {
+            return settingsPanel
+        }
+
+        let panelSize = settingsManager.settingsPanelSize
+        let settingsRootView = SettingsView(onClose: { [weak self] in
+            self?.closeSettingsPanel()
+        })
+        .environmentObject(settingsManager)
+        .environmentObject(notesStore)
+
+        let panel = ActivatingPanel(
+            contentRect: NSRect(x: 0, y: 0, width: panelSize.width, height: panelSize.height),
+            styleMask: [.resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        panel.identifier = settingsPanelIdentifier
+        panel.contentView = NSHostingView(rootView: settingsRootView)
+        panel.isMovableByWindowBackground = true
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.minSize = NSSize(width: 560, height: 520)
+        panel.contentView?.wantsLayer = true
+        panel.contentView?.layer?.cornerRadius = 20
+        panel.contentView?.layer?.masksToBounds = true
+        panel.delegate = self
+        settingsPanel = panel
+        return panel
+    }
+
+    private func positionSettingsPanel(_ panel: NSPanel, relativeTo anchorWindow: NSWindow?) {
+        let frameSize = settingsManager.settingsPanelSize
+        panel.setFrame(
+            NSRect(origin: panel.frame.origin, size: frameSize),
+            display: false
+        )
+
+        guard let anchorWindow = anchorWindow ?? panelsByWindowID[currentWindowIDForKeyEvents()] else {
+            panel.center()
+            return
+        }
+
+        let visibleFrame = (anchorWindow.screen ?? NSScreen.main)?.visibleFrame ?? NSScreen.screens.first?.visibleFrame ?? .zero
+        let origin = NSPoint(
+            x: anchorWindow.frame.midX - frameSize.width / 2,
+            y: anchorWindow.frame.midY - frameSize.height / 2
+        )
+        panel.setFrameOrigin(clampedPanelOrigin(origin, size: frameSize, visibleFrame: visibleFrame))
+    }
+
+    private func persistSettingsPanelSize(from window: NSWindow) {
+        settingsManager.settingsPanelSize = window.frame.size
     }
 
     private func orderedPanelsForHotkeyReveal() -> [(windowID: String, panel: NSPanel)] {

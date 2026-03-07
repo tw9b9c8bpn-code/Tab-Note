@@ -11,10 +11,8 @@ import SwiftUI
 
 struct FootnoteBarView: View {
     @EnvironmentObject var settings: SettingsManager
-    @EnvironmentObject var store: NotesStore
     let windowID: String
     @State private var showInfoPopover = false
-    @State private var showSettings = false
     @State private var isAIProcessing = false
     @State private var aiStatusText = ""
     @State private var showResponseModePopover = false
@@ -92,9 +90,6 @@ struct FootnoteBarView: View {
                         .foregroundColor(settings.isDarkMode ? .white.opacity(0.5) : .black.opacity(0.4))
                 }
                 .buttonStyle(.plain)
-                .sheet(isPresented: $showSettings) {
-                    SettingsView().environmentObject(settings).environmentObject(store)
-                }
             }
             .padding(.trailing, 8)
         }
@@ -122,12 +117,6 @@ struct FootnoteBarView: View {
                     }
                 }
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .showFloatingSettings)) { note in
-            if let targetWindowID = note.object as? String, targetWindowID != windowID {
-                return
-            }
-            openSettings()
         }
     }
 
@@ -158,7 +147,7 @@ struct FootnoteBarView: View {
     }
 
     private func openSettings() {
-        showSettings = true
+        AppDelegate.shared?.showFloatingSettings()
     }
 
     // MARK: - AI

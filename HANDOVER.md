@@ -1,5 +1,28 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-08, settings UI polish + resizable floating panel)
+- Reworked settings UI in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`
+- UI changes:
+  - tabs are now ordered `General`, `AI`, `Deleted Notes`
+  - the top tabs use larger pill buttons with better hit area
+  - buttons across settings now use a consistent pill treatment
+  - the AI Local/API switch is centered and pill-shaped instead of the stock segmented control
+  - General, AI, and Deleted Notes content now sits in cleaner card sections instead of the older divider-heavy layout
+- Settings window behavior changes:
+  - the gear button and `Cmd+,` now use one reusable floating settings panel instead of a sheet-backed surface
+  - the settings panel is resizable and persists its last size through `SettingsManager`
+  - if the app is hidden while settings is open, the settings panel hides with the app and restores on reveal
+- Runtime/storage changes:
+  - added persisted settings panel size in `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsManager.swift`
+  - added reusable floating settings panel management in `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AppDelegate.swift`
+- Preferences / dislikes reinforced from user feedback:
+  - prefers polished pill-shaped controls in settings over stock segmented/button styling
+  - wants settings sections ordered `General`, `AI`, `Deleted Notes`
+  - wants the floating settings popup to stay resizable and remember the chosen size
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had left settings on a fixed-size sheet-style presentation and assumed content polish alone would be enough, but the request required window-level behavior too: one floating surface, user resizing, and persistent size.
+
 ## Completed in this pass (2026-03-08, GPT-5 nano token parameter fix)
 - Fixed OpenAI-compatible GPT-5-family request payloads in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`

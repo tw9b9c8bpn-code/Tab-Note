@@ -105,6 +105,8 @@ class SettingsManager: ObservableObject {
     private let aiAPIModelKey = "aiAPIModel"
     private let aiAPISavedProfilesKey = "aiAPISavedProfiles"
     private let aiAPISelectedProfileIDKey = "aiAPISelectedProfileID"
+    private let settingsPanelWidthKey = "settingsPanelWidth"
+    private let settingsPanelHeightKey = "settingsPanelHeight"
 
     var positionMode: String {
         get { defaults.string(forKey: "positionMode") ?? PositionMode.cursor.rawValue }
@@ -168,6 +170,19 @@ class SettingsManager: ObservableObject {
             } else {
                 defaults.removeObject(forKey: aiAPISelectedProfileIDKey)
             }
+        }
+    }
+    var settingsPanelSize: NSSize {
+        get {
+            let storedWidth = defaults.object(forKey: settingsPanelWidthKey) as? Double ?? 620
+            let storedHeight = defaults.object(forKey: settingsPanelHeightKey) as? Double ?? 610
+            return NSSize(width: max(560, storedWidth), height: max(520, storedHeight))
+        }
+        set {
+            let width = max(560, newValue.width)
+            let height = max(520, newValue.height)
+            defaults.set(width, forKey: settingsPanelWidthKey)
+            defaults.set(height, forKey: settingsPanelHeightKey)
         }
     }
     var aiResponseLengthID: String {
