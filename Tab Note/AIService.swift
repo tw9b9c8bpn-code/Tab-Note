@@ -19,6 +19,11 @@ class AIService {
     private var currentStreamingTask: Task<Void, Never>?
     private init() {}
 
+    private enum APITransport {
+        case openAICompatible
+        case anthropicCompatible
+    }
+
     struct InlineAnswerOptions {
         var aiMode: AIMode
         var endpoint: String
@@ -176,12 +181,12 @@ class AIService {
                        systemPrompt: systemPrompt, userMessage: userMessage,
                        onStatus: onStatus, completion: completion)
         case .api:
-            callOpenAICompatible(endpoint: settings.aiAPIEndpoint,
-                                 apiKey: settings.aiApiKey,
-                                 apiHeaderName: settings.aiAPIHeaderName,
-                                 model: settings.aiAPIModel.isEmpty ? "gpt-4" : settings.aiAPIModel,
-                                 systemPrompt: systemPrompt, userMessage: userMessage,
-                                 onStatus: onStatus, completion: completion)
+            callConfiguredAPI(endpoint: settings.aiAPIEndpoint,
+                              apiKey: settings.aiApiKey,
+                              apiHeaderName: settings.aiAPIHeaderName,
+                              model: settings.aiAPIModel.isEmpty ? "gpt-4" : settings.aiAPIModel,
+                              systemPrompt: systemPrompt, userMessage: userMessage,
+                              onStatus: onStatus, completion: completion)
         }
     }
 
@@ -253,7 +258,7 @@ class AIService {
                 completion: completion
             )
         case .api:
-            callOpenAICompatible(
+            callConfiguredAPI(
                 endpoint: options.endpoint,
                 apiKey: options.apiKey,
                 apiHeaderName: options.apiHeaderName,
@@ -332,7 +337,7 @@ class AIService {
                 completion: completion
             )
         case .api:
-            callOpenAICompatible(
+            callConfiguredAPI(
                 endpoint: options.endpoint,
                 apiKey: options.apiKey,
                 apiHeaderName: options.apiHeaderName,
@@ -358,45 +363,83 @@ class AIService {
         onStatus("Testing connection...")
         switch mode {
         case .local:
-            let endpoint = settings.aiLocalEndpoint.isEmpty ? "http://localhost:11434" : settings.aiLocalEndpoint
-            guard let url = URL(string: "\(endpoint)/api/tags") else {
-                completion(.failure(AIError.invalidURL)); return
+            fetchLocalModels(endpoint: settings.aiLocalEndpoint) { result in
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success(let models):
+                        var msg = "Connection successful ✅"
+                        if !models.isEmpty {
+                            msg += "\nModels:\n" + models.map { "  • \($0)" }.joined(separator: "\n")
+                        }
+                        completion(.success(msg))
+                    case .failure(let error):
+                        completion(.failure(error))
+                    }
+                }
             }
-            var req = URLRequest(url: url); req.timeoutInterval = 10
+        case .api:
+            let transport = apiTransport(for: settings.aiAPIEndpoint)
+            guard let url = apiTransportURL(
+                endpoint: settings.aiAPIEndpoint,
+                transport: transport,
+                openAIPath: "/models",
+                anthropicPath: "/v1/models",
+                defaultBase: "https://api.openai.com/v1"
+            ) else { completion(.failure(AIError.invalidURL)); return }
+            guard !settings.aiApiKey.isEmpty else { completion(.failure(AIError.noAPIKey)); return }
+            if let configurationError = apiConfigurationError(for: settings.aiApiKey) {
+                completion(.failure(configurationError))
+                return
+            }
+            var req = URLRequest(url: url)
+            applyConfiguredAPIHeaders(
+                to: &req,
+                apiKey: settings.aiApiKey,
+                apiHeaderName: settings.aiAPIHeaderName,
+                transport: transport
+            )
+            req.timeoutInterval = 10
             URLSession.shared.dataTask(with: req) { data, response, error in
                 DispatchQueue.main.async {
                     if let error = error { completion(.failure(AIError.requestFailed(error.localizedDescription))); return }
                     guard let http = response as? HTTPURLResponse else { completion(.failure(AIError.invalidResponse)); return }
-                    if http.statusCode == 200 {
-                        var msg = "Connection successful ✅\n"
-                        if let data = data,
-                           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                           let models = json["models"] as? [[String: Any]] {
-                            msg += "Models:\n" + models.compactMap { $0["name"] as? String }.map { "  • \($0)" }.joined(separator: "\n")
-                        }
-                        completion(.success(msg))
-                    } else {
-                        completion(.failure(AIError.requestFailed("HTTP \(http.statusCode)")))
-                    }
-                }
-            }.resume()
-        case .api:
-            let endpoint = settings.aiAPIEndpoint.isEmpty ? "https://api.openai.com/v1" : settings.aiAPIEndpoint
-            guard let url = URL(string: "\(endpoint)/models") else { completion(.failure(AIError.invalidURL)); return }
-            guard !settings.aiApiKey.isEmpty else { completion(.failure(AIError.noAPIKey)); return }
-            var req = URLRequest(url: url)
-            let headerName = normalizedAPIHeaderName(settings.aiAPIHeaderName)
-            req.setValue(apiHeaderValue(for: headerName, apiKey: settings.aiApiKey), forHTTPHeaderField: headerName)
-            req.timeoutInterval = 10
-            URLSession.shared.dataTask(with: req) { _, response, error in
-                DispatchQueue.main.async {
-                    if let error = error { completion(.failure(AIError.requestFailed(error.localizedDescription))); return }
-                    guard let http = response as? HTTPURLResponse else { completion(.failure(AIError.invalidResponse)); return }
                     if http.statusCode == 200 { completion(.success("API connection successful ✅")) }
-                    else { completion(.failure(AIError.requestFailed("HTTP \(http.statusCode)"))) }
+                    else { completion(.failure(AIError.requestFailed("HTTP \(http.statusCode): \(self.parseAPIErrorMessage(from: data))"))) }
                 }
             }.resume()
         }
+    }
+
+    func fetchLocalModels(
+        endpoint: String,
+        completion: @escaping (Result<[String], Error>) -> Void
+    ) {
+        guard let url = localModelsURL(endpoint: endpoint) else {
+            completion(.failure(AIError.invalidURL))
+            return
+        }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 10
+
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            if let error {
+                completion(.failure(AIError.requestFailed(error.localizedDescription)))
+                return
+            }
+            guard let http = response as? HTTPURLResponse else {
+                completion(.failure(AIError.invalidResponse))
+                return
+            }
+            guard http.statusCode == 200 else {
+                completion(.failure(AIError.requestFailed("HTTP \(http.statusCode): \(self.parseAPIErrorMessage(from: data))")))
+                return
+            }
+            guard let data else {
+                completion(.success([]))
+                return
+            }
+            completion(.success(self.parseLocalModelNames(from: data)))
+        }.resume()
     }
 
     // MARK: - Ollama
@@ -454,7 +497,53 @@ class AIService {
         task?.resume()
     }
 
-    // MARK: - OpenAI-compatible
+    // MARK: - API-compatible
+
+    private func callConfiguredAPI(endpoint: String, apiKey: String, apiHeaderName: String, model: String,
+                                   systemPrompt: String, userMessage: String,
+                                   temperature: Double = 0.7,
+                                   maxTokens: Int = 1024,
+                                   streamResponse: Bool = false,
+                                   onStatus: @escaping (String) -> Void,
+                                   onPartial: ((String) -> Void)? = nil,
+                                   completion: @escaping (Result<String, Error>) -> Void) {
+        if let configurationError = apiConfigurationError(for: apiKey) {
+            completion(.failure(configurationError))
+            return
+        }
+        switch apiTransport(for: endpoint) {
+        case .openAICompatible:
+            callOpenAICompatible(
+                endpoint: endpoint,
+                apiKey: apiKey,
+                apiHeaderName: apiHeaderName,
+                model: model,
+                systemPrompt: systemPrompt,
+                userMessage: userMessage,
+                temperature: temperature,
+                maxTokens: maxTokens,
+                streamResponse: streamResponse,
+                onStatus: onStatus,
+                onPartial: onPartial,
+                completion: completion
+            )
+        case .anthropicCompatible:
+            callAnthropicCompatible(
+                endpoint: endpoint,
+                apiKey: apiKey,
+                apiHeaderName: apiHeaderName,
+                model: model,
+                systemPrompt: systemPrompt,
+                userMessage: userMessage,
+                temperature: temperature,
+                maxTokens: maxTokens,
+                streamResponse: streamResponse,
+                onStatus: onStatus,
+                onPartial: onPartial,
+                completion: completion
+            )
+        }
+    }
 
     private func callOpenAICompatible(endpoint: String, apiKey: String, apiHeaderName: String, model: String,
                                       systemPrompt: String, userMessage: String,
@@ -465,13 +554,22 @@ class AIService {
                                       onPartial: ((String) -> Void)? = nil,
                                       completion: @escaping (Result<String, Error>) -> Void) {
         guard !apiKey.isEmpty else { completion(.failure(AIError.noAPIKey)); return }
-        let base = endpoint.isEmpty ? "https://api.openai.com/v1" : endpoint
-        guard let url = URL(string: "\(base)/chat/completions") else { completion(.failure(AIError.invalidURL)); return }
+        guard let url = apiTransportURL(
+            endpoint: endpoint,
+            transport: .openAICompatible,
+            openAIPath: "/chat/completions",
+            anthropicPath: "/v1/messages",
+            defaultBase: "https://api.openai.com/v1"
+        ) else { completion(.failure(AIError.invalidURL)); return }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let headerName = normalizedAPIHeaderName(apiHeaderName)
-        req.setValue(apiHeaderValue(for: headerName, apiKey: apiKey), forHTTPHeaderField: headerName)
+        applyConfiguredAPIHeaders(
+            to: &req,
+            apiKey: apiKey,
+            apiHeaderName: apiHeaderName,
+            transport: .openAICompatible
+        )
         req.timeoutInterval = 180
         let body: [String: Any] = [
             "model": model,
@@ -504,10 +602,84 @@ class AIService {
                       let choices = json["choices"] as? [[String: Any]],
                       let msg = choices.first?["message"] as? [String: Any],
                       let content = msg["content"] as? String else {
-                    let raw = data.flatMap { String(data: $0, encoding: .utf8) } ?? "?"
-                    completion(.failure(AIError.requestFailed("Unexpected: \(raw.prefix(200))"))); return
+                    let errorMessage = self?.parseAPIErrorMessage(from: data) ?? "Unexpected response"
+                    completion(.failure(AIError.requestFailed(errorMessage))); return
                 }
                 completion(.success(content))
+            }
+        }
+        currentTask = task
+        task?.resume()
+    }
+
+    private func callAnthropicCompatible(endpoint: String, apiKey: String, apiHeaderName: String, model: String,
+                                         systemPrompt: String, userMessage: String,
+                                         temperature: Double = 0.7,
+                                         maxTokens: Int = 1024,
+                                         streamResponse: Bool = false,
+                                         onStatus: @escaping (String) -> Void,
+                                         onPartial: ((String) -> Void)? = nil,
+                                         completion: @escaping (Result<String, Error>) -> Void) {
+        guard !apiKey.isEmpty else { completion(.failure(AIError.noAPIKey)); return }
+        guard let url = apiTransportURL(
+            endpoint: endpoint,
+            transport: .anthropicCompatible,
+            openAIPath: "/chat/completions",
+            anthropicPath: "/v1/messages",
+            defaultBase: "https://api.minimax.io/anthropic"
+        ) else { completion(.failure(AIError.invalidURL)); return }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyConfiguredAPIHeaders(
+            to: &req,
+            apiKey: apiKey,
+            apiHeaderName: apiHeaderName,
+            transport: .anthropicCompatible
+        )
+        req.timeoutInterval = 180
+        let body: [String: Any] = [
+            "model": model,
+            "system": systemPrompt,
+            "messages": [["role": "user", "content": userMessage]],
+            "temperature": temperature,
+            "max_tokens": maxTokens,
+            "stream": streamResponse
+        ]
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        if streamResponse {
+            streamAnthropicCompatible(request: req, model: model, onStatus: onStatus, onPartial: onPartial, completion: completion)
+            return
+        }
+
+        onStatus("Connecting to API...")
+        onStatus("Generating with \(model)...")
+        var task: URLSessionDataTask?
+        task = URLSession.shared.dataTask(with: req) { [weak self] data, _, error in
+            DispatchQueue.main.async {
+                if self?.currentTask === task {
+                    self?.currentTask = nil
+                }
+                if let error = error as? URLError, error.code == .cancelled {
+                    completion(.failure(AIError.cancelled)); return
+                }
+                if let error = error { completion(.failure(AIError.requestFailed(error.localizedDescription))); return }
+                guard let data else {
+                    completion(.failure(AIError.invalidResponse)); return
+                }
+                do {
+                    let content = try self?.anthropicMessageContent(from: data) ?? ""
+                    let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmed.isEmpty {
+                        completion(.failure(AIError.noContent))
+                    } else {
+                        completion(.success(trimmed))
+                    }
+                } catch {
+                    completion(.failure(error))
+                }
             }
         }
         currentTask = task
@@ -521,6 +693,9 @@ class AIService {
 
     private func apiHeaderValue(for headerName: String, apiKey: String) -> String {
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if headerName.caseInsensitiveCompare("x-api-key") == .orderedSame {
+            return rawAPIKeyValue(from: trimmedKey)
+        }
         guard headerName.caseInsensitiveCompare("Authorization") == .orderedSame else {
             return trimmedKey
         }
@@ -529,6 +704,104 @@ class AIService {
             return trimmedKey
         }
         return "Bearer \(trimmedKey)"
+    }
+
+    private func rawAPIKeyValue(from apiKey: String) -> String {
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowercased = trimmedKey.lowercased()
+        if lowercased.hasPrefix("bearer ") {
+            return String(trimmedKey.dropFirst(7))
+        }
+        if lowercased.hasPrefix("basic ") {
+            return String(trimmedKey.dropFirst(6))
+        }
+        return trimmedKey
+    }
+
+    private func apiTransport(for endpoint: String) -> APITransport {
+        endpoint.lowercased().contains("/anthropic") ? .anthropicCompatible : .openAICompatible
+    }
+
+    private func apiTransportURL(
+        endpoint: String,
+        transport: APITransport,
+        openAIPath: String,
+        anthropicPath: String,
+        defaultBase: String
+    ) -> URL? {
+        let base = endpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? defaultBase
+            : endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedBase = base.hasSuffix("/") ? String(base.dropLast()) : base
+        let path = transport == .anthropicCompatible ? anthropicPath : openAIPath
+        let normalizedPath = path.hasPrefix("/") ? path : "/\(path)"
+        return URL(string: normalizedBase + normalizedPath)
+    }
+
+    private func applyConfiguredAPIHeaders(
+        to request: inout URLRequest,
+        apiKey: String,
+        apiHeaderName: String,
+        transport: APITransport
+    ) {
+        let headerName = normalizedAPIHeaderName(apiHeaderName)
+        request.setValue(apiHeaderValue(for: headerName, apiKey: apiKey), forHTTPHeaderField: headerName)
+
+        guard transport == .anthropicCompatible else { return }
+        if headerName.caseInsensitiveCompare("x-api-key") != .orderedSame {
+            request.setValue(rawAPIKeyValue(from: apiKey), forHTTPHeaderField: "x-api-key")
+        }
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+    }
+
+    private func localModelsURL(endpoint: String) -> URL? {
+        let base = endpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "http://localhost:11434"
+            : endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedBase = base.hasSuffix("/") ? String(base.dropLast()) : base
+        return URL(string: normalizedBase + "/api/tags")
+    }
+
+    private func parseLocalModelNames(from data: Data) -> [String] {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let models = json["models"] as? [[String: Any]] else {
+            return []
+        }
+
+        return Array(
+            Set(models.compactMap { $0["name"] as? String }.filter { !$0.isEmpty })
+        )
+        .sorted()
+    }
+
+    private func parseAPIErrorMessage(from data: Data?) -> String {
+        guard let data else { return "Unexpected empty response" }
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let error = json["error"] as? [String: Any],
+               let message = error["message"] as? String,
+               !message.isEmpty {
+                return message
+            }
+            if let error = json["error"] as? String,
+               !error.isEmpty {
+                return error
+            }
+            if let detail = json["message"] as? String,
+               !detail.isEmpty {
+                return detail
+            }
+        }
+        let raw = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return raw.isEmpty ? "Unexpected response" : String(raw.prefix(240))
+    }
+
+    private func apiConfigurationError(for apiKey: String) -> AIError? {
+        let rawKey = rawAPIKeyValue(from: apiKey).trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowercased = rawKey.lowercased()
+        if lowercased.hasPrefix("http://") || lowercased.hasPrefix("https://") {
+            return .requestFailed("API Key looks like an endpoint URL, not a secret key. Re-enter the real provider key in API Key.")
+        }
+        return nil
     }
 
     private func streamOllama(
@@ -659,6 +932,74 @@ class AIService {
         }
     }
 
+    private func streamAnthropicCompatible(
+        request: URLRequest,
+        model: String,
+        onStatus: @escaping (String) -> Void,
+        onPartial: ((String) -> Void)?,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        onStatus("Connecting to API...")
+        onStatus("Streaming with \(model)...")
+
+        currentStreamingTask = Task { [weak self] in
+            var aggregated = ""
+            do {
+                let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                guard let http = response as? HTTPURLResponse else {
+                    throw AIError.invalidResponse
+                }
+                guard (200..<300).contains(http.statusCode) else {
+                    throw AIError.requestFailed("HTTP \(http.statusCode)")
+                }
+
+                streamLoop: for try await line in bytes.lines {
+                    try Task.checkCancellation()
+                    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { continue }
+                    let event = try self?.anthropicStreamEvent(from: trimmed) ?? .none
+                    switch event {
+                    case .none:
+                        continue
+                    case .done:
+                        break streamLoop
+                    case .content(let content):
+                        guard !content.isEmpty else { continue }
+                        aggregated += content
+                        if let onPartial {
+                            await MainActor.run { onPartial(aggregated) }
+                        }
+                    }
+                }
+
+                let finalText = aggregated.trimmingCharacters(in: .whitespacesAndNewlines)
+                await MainActor.run {
+                    self?.currentStreamingTask = nil
+                    if finalText.isEmpty {
+                        completion(.failure(AIError.noContent))
+                    } else {
+                        completion(.success(finalText))
+                    }
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    self?.currentStreamingTask = nil
+                    completion(.failure(AIError.cancelled))
+                }
+            } catch let error as AIError {
+                await MainActor.run {
+                    self?.currentStreamingTask = nil
+                    completion(.failure(error))
+                }
+            } catch {
+                await MainActor.run {
+                    self?.currentStreamingTask = nil
+                    completion(.failure(AIError.requestFailed(error.localizedDescription)))
+                }
+            }
+        }
+    }
+
     private func ollamaContentChunk(from line: String) throws -> String? {
         guard let data = line.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -679,6 +1020,12 @@ class AIService {
     }
 
     private enum OpenAIStreamEvent {
+        case content(String)
+        case done
+        case none
+    }
+
+    private enum AnthropicStreamEvent {
         case content(String)
         case done
         case none
@@ -723,5 +1070,60 @@ class AIService {
             }
         }
         return .none
+    }
+
+    private func anthropicMessageContent(from data: Data) throws -> String {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw AIError.invalidResponse
+        }
+        if let error = json["error"] as? [String: Any],
+           let message = error["message"] as? String {
+            throw AIError.requestFailed(message)
+        }
+        if let error = json["error"] as? String {
+            throw AIError.requestFailed(error)
+        }
+        if let contentBlocks = json["content"] as? [[String: Any]] {
+            return contentBlocks.compactMap { block in
+                guard let type = block["type"] as? String, type == "text" else { return nil }
+                return block["text"] as? String
+            }.joined()
+        }
+        return ""
+    }
+
+    private func anthropicStreamEvent(from line: String) throws -> AnthropicStreamEvent {
+        guard line.hasPrefix("data:") else { return .none }
+        let payload = line.dropFirst(5).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !payload.isEmpty else { return .none }
+        if payload == "[DONE]" { return .done }
+
+        guard let data = payload.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return .none
+        }
+
+        if let error = json["error"] as? [String: Any],
+           let message = error["message"] as? String {
+            throw AIError.requestFailed(message)
+        }
+        if let error = json["error"] as? String {
+            throw AIError.requestFailed(error)
+        }
+
+        switch json["type"] as? String {
+        case "content_block_delta":
+            if let delta = json["delta"] as? [String: Any],
+               let deltaType = delta["type"] as? String,
+               deltaType == "text_delta",
+               let text = delta["text"] as? String {
+                return .content(text)
+            }
+            return .none
+        case "message_stop":
+            return .done
+        default:
+            return .none
+        }
     }
 }

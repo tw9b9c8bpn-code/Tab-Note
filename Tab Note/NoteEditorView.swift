@@ -2854,7 +2854,6 @@ private struct ThoughtStatusText: View {
     let isAnimating: Bool
     let isDarkMode: Bool
     @State private var gradientPhase: CGFloat = -1.2
-    @State private var animatedColors = ThoughtStatusText.makeRandomGradientColors()
     private let fontSize: CGFloat = 12
 
     private var baseColor: Color {
@@ -2863,6 +2862,25 @@ private struct ThoughtStatusText: View {
 
     private var brightColor: Color {
         isDarkMode ? .white.opacity(0.95) : .black.opacity(0.86)
+    }
+
+    private var animatedColors: [Color] {
+        if isDarkMode {
+            return [
+                .white.opacity(0.16),
+                .white.opacity(0.34),
+                .white.opacity(0.98),
+                .white.opacity(0.30),
+                .white.opacity(0.16)
+            ]
+        }
+        return [
+            .black.opacity(0.08),
+            .black.opacity(0.18),
+            .black.opacity(0.80),
+            .black.opacity(0.16),
+            .black.opacity(0.08)
+        ]
     }
 
     var body: some View {
@@ -2896,21 +2914,9 @@ private struct ThoughtStatusText: View {
             gradientPhase = -1.2
             return
         }
-        animatedColors = Self.makeRandomGradientColors()
         gradientPhase = -1.2
         withAnimation(.linear(duration: 1.35).repeatForever(autoreverses: false)) {
             gradientPhase = 1.6
-        }
-    }
-    
-    private static func makeRandomGradientColors() -> [Color] {
-        let hues = (0..<4).map { _ in Double.random(in: 0...1) }
-        return hues.map { hue in
-            Color(
-                hue: hue,
-                saturation: Double.random(in: 0.72...0.95),
-                brightness: Double.random(in: 0.88...1.0)
-            )
         }
     }
 }

@@ -240,33 +240,34 @@ struct SettingsView: View {
     @State private var isDiagnosing = false
     @State private var diagnoseResult = ""
     @State private var diagnoseStatus = ""
+    @State private var availableLocalModels: [String] = []
+    @State private var isLoadingLocalModels = false
+    @State private var localModelsStatus = ""
+    @State private var showsAPIKey = false
 
     private var aiSettings: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("AI Assistant")
-                .font(.system(size: 13, weight: .semibold))
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Provider")
-                    .font(.system(size: 12, weight: .medium))
-                Text("Choose one runtime. Only the selected provider's fields are used for AI requests.")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-            }
-
-            Picker("Mode", selection: Binding(
+            HStack {
+                Spacer()
+                Picker("", selection: Binding(
                 get: { settings.aiMode },
                 set: {
                     settings.aiMode = $0
                     resetAIDiagnostics()
+                    if AIMode(rawValue: $0) == .local {
+                        refreshLocalModels()
+                    }
                 }
             )) {
                 ForEach(AIMode.allCases, id: \.rawValue) { mode in
                     Text(mode.displayName).tag(mode.rawValue)
                 }
             }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 220)
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 220)
+                Spacer()
+            }
 
             activeAIProviderCard
 
@@ -278,38 +279,18 @@ struct SettingsView: View {
 
             aiDiagnosticsSection
         }
+        .onAppear {
+            if settings.aiModeEnum == .local && availableLocalModels.isEmpty {
+                refreshLocalModels()
+            }
+        }
     }
 
     private var activeAIProviderCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: settings.aiModeEnum == .local ? "desktopcomputer" : "network")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .frame(width: 20)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(settings.aiModeEnum == .local ? "Local Model Server" : "OpenAI-Compatible API")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text(settings.aiModeEnum == .local
-                         ? "Use Ollama or another local server running on this Mac. These fields belong only to Local mode."
-                         : "Use OpenAI, OpenRouter, MiniMax, or another compatible provider. These fields belong only to API mode.")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                }
-
-                Spacer()
-
-                Text(settings.aiModeEnum == .local ? "LOCAL" : "API")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(settings.isDarkMode ? .white.opacity(0.9) : .black.opacity(0.75))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(settings.isDarkMode ? Color.white.opacity(0.09) : Color.black.opacity(0.06))
-                    )
-            }
+            Text(settings.aiModeEnum.displayName)
+                .font(.system(size: 13, weight: .semibold))
+                .frame(maxWidth: .infinity, alignment: .center)
 
             if settings.aiModeEnum == .local {
                 VStack(alignment: .leading, spacing: 8) {
@@ -329,19 +310,73 @@ struct SettingsView: View {
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 12))
 
-                    Text("Only Local mode reads these values.")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 8) {
+                        Button(action: refreshLocalModels) {
+                            HStack(spacing: 5) {
+                                if isLoadingLocalModels {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                } else {
+                                    Image(systemName: "arrow.clockwise")
+                                        .font(.system(size: 11, weight: .medium))
+                                }
+                                Text(isLoadingLocalModels ? "Loading..." : "Refresh Local Models")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isLoadingLocalModels)
+
+                        if !availableLocalModels.isEmpty {
+                            Menu("Available Models") {
+                                ForEach(availableLocalModels, id: \.self) { modelName in
+                                    Button(modelName) {
+                                        settings.aiLocalModel = modelName
+                                    }
+                                }
+                            }
+                            .menuStyle(.borderlessButton)
+                        }
+                    }
+
+                    if !localModelsStatus.isEmpty {
+                        Text(localModelsStatus)
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
                 }
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     aiFieldLabel("API Key")
-                    SecureField("Enter API key", text: Binding(
-                        get: { settings.aiApiKey },
-                        set: { settings.aiApiKey = $0 }
-                    ))
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12))
+                    HStack(spacing: 8) {
+                        Group {
+                            if showsAPIKey {
+                                TextField("Enter API key", text: Binding(
+                                    get: { settings.aiApiKey },
+                                    set: { settings.aiApiKey = $0 }
+                                ))
+                            } else {
+                                SecureField("Enter API key", text: Binding(
+                                    get: { settings.aiApiKey },
+                                    set: { settings.aiApiKey = $0 }
+                                ))
+                            }
+                        }
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
+
+                        Button {
+                            showsAPIKey.toggle()
+                        } label: {
+                            Image(systemName: showsAPIKey ? "eye.slash" : "eye")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    Text("If the error says the key ends with `/v1`, the API Key field currently contains your endpoint instead of the real secret key.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
 
                     aiFieldLabel("API Header")
                     TextField("Authorization", text: Binding(
@@ -367,7 +402,7 @@ struct SettingsView: View {
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 12))
 
-                    Text("Only API mode reads these values, including the custom auth header.")
+                    Text("Supports OpenAI-style `/v1` bases and Anthropic-style `/anthropic` bases.")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }
@@ -389,8 +424,8 @@ struct SettingsView: View {
             Text("Diagnostics")
                 .font(.system(size: 13, weight: .semibold))
             Text(settings.aiModeEnum == .local
-                 ? "Checks the Local endpoint by calling `/api/tags` on the server above."
-                 : "Checks the API endpoint by calling `/models` with the API key and header above.")
+                 ? "Checks the local endpoint and lists installed models."
+                 : "Checks the API endpoint with the configured header, endpoint, and request protocol.")
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
 
@@ -460,6 +495,27 @@ struct SettingsView: View {
                 }
             }
         )
+    }
+
+    private func refreshLocalModels() {
+        isLoadingLocalModels = true
+        localModelsStatus = ""
+
+        AIService.shared.fetchLocalModels(endpoint: settings.aiLocalEndpoint) { result in
+            DispatchQueue.main.async {
+                isLoadingLocalModels = false
+                switch result {
+                case .success(let models):
+                    availableLocalModels = models
+                    localModelsStatus = models.isEmpty
+                        ? "No local models were returned by the current endpoint."
+                        : "\(models.count) local model\(models.count == 1 ? "" : "s") found."
+                case .failure(let error):
+                    availableLocalModels = []
+                    localModelsStatus = "Could not load local models: \(error.localizedDescription)"
+                }
+            }
+        }
     }
 
     private var aiDiagnosticsButtonTitle: String {

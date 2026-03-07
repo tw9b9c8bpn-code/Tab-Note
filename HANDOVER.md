@@ -1,5 +1,44 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-07, API key misconfiguration guard)
+- Added explicit API-key validation and visibility aids in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`
+- Changes:
+  - API requests and diagnostics now fail early with a clear message if the API Key field contains something that looks like an endpoint URL
+  - API settings now include an eye toggle so the saved key can be inspected instead of staying fully hidden behind a secure field
+  - current saved config inspection showed the app had stored `Bearer https://api.deepseek.com/v1` in the API key slot, which explains provider errors ending in `/v1`
+- Preferences / dislikes reinforced from user feedback:
+  - prefers backend investigation to include real saved-config inspection, not just assumptions about entered values
+  - prefers clearer in-app debugging when AI auth fails so mis-entered keys are obvious
+- Mistakes / wrong assumptions fixed in this pass:
+  - I initially focused on protocol compatibility only, but the persisted API key value itself was also wrong and needed a defensive guard plus a way to reveal it in the UI.
+
+## Completed in this pass (2026-03-07, MiniMax API transport fix + AI settings cleanup)
+- Reworked API transport handling in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`
+- Backend/API changes:
+  - API requests now auto-detect OpenAI-compatible vs Anthropic-compatible bases
+  - Anthropic-compatible bases such as `https://api.minimax.io/anthropic` now use `/v1/messages` and `/v1/models` instead of OpenAI `/chat/completions`
+  - Anthropic-compatible requests now send `anthropic-version` and `x-api-key` in addition to the configured auth header when needed, so providers like MiniMax work even if the user entered `Authorization: Bearer ...`
+  - local-model discovery was added through a reusable `/api/tags` fetch helper
+- Reworked AI settings UI in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/NoteEditorView.swift`
+- UI/animation changes:
+  - removed the top `AI Assistant` / `Provider` copy from the AI tab
+  - centered the Local/API segmented selector
+  - removed the extra `mode` wording from the AI settings copy
+  - Local settings now expose a refreshable list of installed local models so users can pick without guessing
+  - the `Thinking... xx.xxs` animation now uses a moving grayscale gradient instead of random colors
+- Preferences / dislikes reinforced from user feedback:
+  - prefers the AI settings tab to be visually minimal at the top, without redundant section labels or explanatory copy
+  - prefers Local/API selection to be centered and feel like a clean binary switch
+  - prefers local model discovery in-app instead of making users guess installed Ollama model names
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had previously assumed MiniMax failure was mainly a settings-entry issue, but the real blocker was backend protocol mismatch: `/anthropic` needs Anthropic Messages API semantics, not OpenAI chat-completions.
+  - I had also left the AI tab with too much top framing text after the settings split, but the preferred direction is a cleaner UI with the selector centered and the form doing the talking.
+
 ## Completed in this pass (2026-03-07, full Local/API settings split)
 - Reworked AI settings storage so Local and API now have separate persisted fields in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsManager.swift`
