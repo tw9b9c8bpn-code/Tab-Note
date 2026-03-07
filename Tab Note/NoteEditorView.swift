@@ -1283,6 +1283,8 @@ private final class InlineAnswerPanelModel: ObservableObject {
     var endpoint: String = ""
     var apiKey: String = ""
     var apiHeaderName: String = "Authorization"
+    var apiRequestStyle: APIRequestStyle = .standard
+    var advancedJSONConfiguration: String = ""
     var sourceParagraph: String = ""
     var priorAnswerContext: String = ""
     var followUpQuestion: String = ""
@@ -1346,6 +1348,8 @@ private final class InlineAnswerPanelModel: ObservableObject {
             apiKey: apiKey,
             apiHeaderName: apiHeaderName,
             model: model,
+            apiRequestStyle: apiRequestStyle,
+            advancedJSONConfiguration: advancedJSONConfiguration,
             promptSelection: promptSelection
         )
     }
@@ -1356,6 +1360,8 @@ private final class InlineAnswerPanelModel: ObservableObject {
         endpoint = options.endpoint
         apiKey = options.apiKey
         apiHeaderName = options.apiHeaderName
+        apiRequestStyle = options.apiRequestStyle
+        advancedJSONConfiguration = options.advancedJSONConfiguration
         aiMode = options.aiMode
         model = options.model
         promptSelection = options.promptSelection
@@ -1374,6 +1380,8 @@ private final class InlineAnswerPanelModel: ObservableObject {
         endpoint = options.endpoint
         apiKey = options.apiKey
         apiHeaderName = options.apiHeaderName
+        apiRequestStyle = options.apiRequestStyle
+        advancedJSONConfiguration = options.advancedJSONConfiguration
         aiMode = options.aiMode
         model = options.model
         promptSelection = options.promptSelection
@@ -1386,6 +1394,8 @@ private final class InlineAnswerPanelModel: ObservableObject {
         summaryChip = "AI"
         model = ""
         aiMode = .local
+        apiRequestStyle = .standard
+        advancedJSONConfiguration = ""
         isStreaming = false
         contentSize = NSSize(width: 366, height: 120)
         promptSelection = PromptInjectionConfigurationStore.shared.configuration.defaultSelection

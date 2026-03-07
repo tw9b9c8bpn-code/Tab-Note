@@ -30,12 +30,32 @@ class AIService {
         let model: String
     }
 
+    private struct AdvancedJSONModeConfig {
+        let endpoint: String
+        let method: String
+        let headers: [String: String]
+        let bodyTemplate: Any
+        let responseTextPath: String?
+        let streamingEnabled: Bool
+        let streamTextPath: String?
+        let streamLinePrefix: String
+        let streamDoneToken: String
+    }
+
+    private struct PreparedAdvancedJSONRequest {
+        let config: AdvancedJSONModeConfig
+        let request: URLRequest
+        let resolvedEndpoint: String
+    }
+
     struct InlineAnswerOptions {
         var aiMode: AIMode
         var endpoint: String
         var apiKey: String
         var apiHeaderName: String
         var model: String
+        var apiRequestStyle: APIRequestStyle
+        var advancedJSONConfiguration: String
         var promptSelection: PromptInjectionSelection
 
         init(
@@ -44,6 +64,8 @@ class AIService {
             apiKey: String,
             apiHeaderName: String,
             model: String,
+            apiRequestStyle: APIRequestStyle,
+            advancedJSONConfiguration: String,
             promptSelection: PromptInjectionSelection
         ) {
             self.aiMode = aiMode
@@ -51,6 +73,8 @@ class AIService {
             self.apiKey = apiKey
             self.apiHeaderName = apiHeaderName
             self.model = model
+            self.apiRequestStyle = apiRequestStyle
+            self.advancedJSONConfiguration = advancedJSONConfiguration
             self.promptSelection = PromptInjectionConfigurationStore.shared.configuration.normalized(promptSelection)
         }
 
@@ -61,7 +85,11 @@ class AIService {
                 endpoint: mode == .local ? settings.aiLocalEndpoint : settings.aiAPIEndpoint,
                 apiKey: mode == .api ? settings.aiApiKey : "",
                 apiHeaderName: mode == .api ? settings.aiAPIHeaderName : "Authorization",
-                model: mode == .local ? settings.aiLocalModel : settings.aiAPIModel,
+                model: mode == .local
+                    ? settings.aiLocalModel
+                    : (settings.aiAPIRequestStyleEnum == .json ? "Custom JSON" : settings.aiAPIModel),
+                apiRequestStyle: mode == .api ? settings.aiAPIRequestStyleEnum : .standard,
+                advancedJSONConfiguration: mode == .api ? settings.aiAPIAdvancedJSONConfiguration : "",
                 promptSelection: settings.aiPromptSelection
             )
         }
@@ -191,6 +219,8 @@ class AIService {
                               apiKey: settings.aiApiKey,
                               apiHeaderName: settings.aiAPIHeaderName,
                               model: settings.aiAPIModel.isEmpty ? "gpt-4" : settings.aiAPIModel,
+                              requestStyle: settings.aiAPIRequestStyleEnum,
+                              advancedJSONConfiguration: settings.aiAPIAdvancedJSONConfiguration,
                               systemPrompt: systemPrompt, userMessage: userMessage,
                               onStatus: onStatus, completion: completion)
         }
@@ -269,6 +299,8 @@ class AIService {
                 apiKey: options.apiKey,
                 apiHeaderName: options.apiHeaderName,
                 model: options.model.isEmpty ? "gpt-4" : options.model,
+                requestStyle: options.apiRequestStyle,
+                advancedJSONConfiguration: options.advancedJSONConfiguration,
                 systemPrompt: systemPrompt,
                 userMessage: userMessage,
                 temperature: 0.3,
@@ -348,6 +380,8 @@ class AIService {
                 apiKey: options.apiKey,
                 apiHeaderName: options.apiHeaderName,
                 model: options.model.isEmpty ? "gpt-4" : options.model,
+                requestStyle: options.apiRequestStyle,
+                advancedJSONConfiguration: options.advancedJSONConfiguration,
                 systemPrompt: systemPrompt,
                 userMessage: userMessage,
                 temperature: 0.3,
@@ -389,6 +423,8 @@ class AIService {
                 apiKey: settings.aiApiKey,
                 apiHeaderName: settings.aiAPIHeaderName,
                 model: settings.aiAPIModel,
+                requestStyle: settings.aiAPIRequestStyleEnum,
+                advancedJSONConfiguration: settings.aiAPIAdvancedJSONConfiguration,
                 completion: completion
             )
         }
@@ -484,6 +520,8 @@ class AIService {
     // MARK: - API-compatible
 
     private func callConfiguredAPI(endpoint: String, apiKey: String, apiHeaderName: String, model: String,
+                                   requestStyle: APIRequestStyle = .standard,
+                                   advancedJSONConfiguration: String = "",
                                    systemPrompt: String, userMessage: String,
                                    temperature: Double = 0.7,
                                    maxTokens: Int = 1024,
@@ -491,6 +529,24 @@ class AIService {
                                    onStatus: @escaping (String) -> Void,
                                    onPartial: ((String) -> Void)? = nil,
                                    completion: @escaping (Result<String, Error>) -> Void) {
+        if requestStyle == .json {
+            callAdvancedJSONConfiguredAPI(
+                rawConfiguration: advancedJSONConfiguration,
+                fallbackEndpoint: endpoint,
+                fallbackAPIKey: apiKey,
+                fallbackAPIHeaderName: apiHeaderName,
+                fallbackModel: model,
+                systemPrompt: systemPrompt,
+                userMessage: userMessage,
+                temperature: temperature,
+                maxTokens: maxTokens,
+                streamResponse: streamResponse,
+                onStatus: onStatus,
+                onPartial: onPartial,
+                completion: completion
+            )
+            return
+        }
         if let configurationError = apiConfigurationError(for: apiKey) {
             completion(.failure(configurationError))
             return
@@ -680,6 +736,543 @@ class AIService {
         task?.resume()
     }
 
+    private func callAdvancedJSONConfiguredAPI(
+        rawConfiguration: String,
+        fallbackEndpoint: String,
+        fallbackAPIKey: String,
+        fallbackAPIHeaderName: String,
+        fallbackModel: String,
+        systemPrompt: String,
+        userMessage: String,
+        temperature: Double,
+        maxTokens: Int,
+        streamResponse: Bool,
+        onStatus: @escaping (String) -> Void,
+        onPartial: ((String) -> Void)?,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        let prepared: PreparedAdvancedJSONRequest
+        do {
+            prepared = try preparedAdvancedJSONRequest(
+                rawConfiguration: rawConfiguration,
+                fallbackEndpoint: fallbackEndpoint,
+                fallbackAPIKey: fallbackAPIKey,
+                fallbackAPIHeaderName: fallbackAPIHeaderName,
+                fallbackModel: fallbackModel,
+                systemPrompt: systemPrompt,
+                userMessage: userMessage,
+                temperature: temperature,
+                maxTokens: maxTokens,
+                streamResponse: streamResponse
+            )
+        } catch {
+            completion(.failure(error))
+            return
+        }
+
+        if streamResponse && prepared.config.streamingEnabled {
+            streamAdvancedJSON(
+                preparedRequest: prepared,
+                onStatus: onStatus,
+                onPartial: onPartial,
+                completion: completion
+            )
+            return
+        }
+
+        onStatus("Connecting to API...")
+        onStatus("Sending custom JSON request...")
+
+        var task: URLSessionDataTask?
+        task = URLSession.shared.dataTask(with: prepared.request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                if self?.currentTask === task {
+                    self?.currentTask = nil
+                }
+                if let error = error as? URLError, error.code == .cancelled {
+                    completion(.failure(AIError.cancelled))
+                    return
+                }
+                if let error {
+                    completion(.failure(AIError.requestFailed(error.localizedDescription)))
+                    return
+                }
+                guard let http = response as? HTTPURLResponse else {
+                    completion(.failure(AIError.invalidResponse))
+                    return
+                }
+                guard let data else {
+                    completion(.failure(AIError.invalidResponse))
+                    return
+                }
+                guard (200..<300).contains(http.statusCode) else {
+                    completion(.failure(AIError.requestFailed("HTTP \(http.statusCode): \(self?.parseAPIErrorMessage(from: data) ?? "Unexpected response")")))
+                    return
+                }
+
+                do {
+                    let content = try self?.advancedJSONResponseText(
+                        from: data,
+                        textPath: prepared.config.responseTextPath
+                    ) ?? ""
+                    let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmed.isEmpty {
+                        completion(.failure(AIError.noContent))
+                    } else {
+                        completion(.success(trimmed))
+                    }
+                } catch {
+                    completion(.failure(error))
+                }
+            }
+        }
+        currentTask = task
+        task?.resume()
+    }
+
+    private func diagnoseAdvancedJSONConfiguredAPI(
+        rawConfiguration: String,
+        fallbackEndpoint: String,
+        fallbackAPIKey: String,
+        fallbackAPIHeaderName: String,
+        fallbackModel: String,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        let prepared: PreparedAdvancedJSONRequest
+        do {
+            prepared = try preparedAdvancedJSONRequest(
+                rawConfiguration: rawConfiguration,
+                fallbackEndpoint: fallbackEndpoint,
+                fallbackAPIKey: fallbackAPIKey,
+                fallbackAPIHeaderName: fallbackAPIHeaderName,
+                fallbackModel: fallbackModel,
+                systemPrompt: "You are a connectivity test. Reply with OK.",
+                userMessage: "Reply with OK.",
+                temperature: 0,
+                maxTokens: 8,
+                streamResponse: false
+            )
+        } catch {
+            completion(.failure(error))
+            return
+        }
+
+        URLSession.shared.dataTask(with: prepared.request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                if let error {
+                    completion(.failure(AIError.requestFailed(error.localizedDescription)))
+                    return
+                }
+                guard let http = response as? HTTPURLResponse else {
+                    completion(.failure(AIError.invalidResponse))
+                    return
+                }
+                guard let data else {
+                    completion(.failure(AIError.invalidResponse))
+                    return
+                }
+                guard (200..<300).contains(http.statusCode) else {
+                    completion(.failure(AIError.requestFailed("HTTP \(http.statusCode): \(self?.parseAPIErrorMessage(from: data) ?? "Unexpected response")")))
+                    return
+                }
+
+                do {
+                    let content = try self?.advancedJSONResponseText(
+                        from: data,
+                        textPath: prepared.config.responseTextPath
+                    ) ?? ""
+                    guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                        completion(.failure(AIError.noContent))
+                        return
+                    }
+
+                    completion(.success("""
+                    API connection successful ✅
+                    Protocol: Advanced JSON
+                    Endpoint: \(prepared.resolvedEndpoint)
+                    """))
+                } catch {
+                    completion(.failure(error))
+                }
+            }
+        }.resume()
+    }
+
+    private func preparedAdvancedJSONRequest(
+        rawConfiguration: String,
+        fallbackEndpoint: String,
+        fallbackAPIKey: String,
+        fallbackAPIHeaderName: String,
+        fallbackModel: String,
+        systemPrompt: String,
+        userMessage: String,
+        temperature: Double,
+        maxTokens: Int,
+        streamResponse: Bool
+    ) throws -> PreparedAdvancedJSONRequest {
+        let config = try parseAdvancedJSONConfiguration(
+            rawConfiguration,
+            fallbackEndpoint: fallbackEndpoint
+        )
+
+        let resolvedEndpoint = interpolatedTemplateString(
+            config.endpoint,
+            context: placeholderContext(
+                endpoint: fallbackEndpoint,
+                apiKey: fallbackAPIKey,
+                apiHeaderName: fallbackAPIHeaderName,
+                model: fallbackModel,
+                systemPrompt: systemPrompt,
+                userMessage: userMessage,
+                temperature: temperature,
+                maxTokens: maxTokens,
+                streamResponse: streamResponse
+            )
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard let url = URL(string: resolvedEndpoint), !resolvedEndpoint.isEmpty else {
+            throw AIError.invalidURL
+        }
+
+        let placeholderValues = placeholderContext(
+            endpoint: resolvedEndpoint,
+            apiKey: fallbackAPIKey,
+            apiHeaderName: fallbackAPIHeaderName,
+            model: fallbackModel,
+            systemPrompt: systemPrompt,
+            userMessage: userMessage,
+            temperature: temperature,
+            maxTokens: maxTokens,
+            streamResponse: streamResponse
+        )
+
+        let resolvedBody = resolveJSONTemplate(config.bodyTemplate, context: placeholderValues)
+        let bodyData: Data
+        do {
+            bodyData = try JSONSerialization.data(withJSONObject: resolvedBody, options: [.fragmentsAllowed])
+        } catch {
+            throw AIError.requestFailed("Advanced JSON body is not valid after placeholder replacement.")
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = config.method
+        request.timeoutInterval = 180
+
+        let resolvedHeaders = Dictionary(uniqueKeysWithValues: config.headers.map { key, value in
+            (
+                key,
+                interpolatedTemplateString(value, context: placeholderValues)
+            )
+        })
+
+        for (header, value) in resolvedHeaders where !value.isEmpty {
+            request.setValue(value, forHTTPHeaderField: header)
+        }
+
+        if !resolvedHeaders.keys.contains(where: { $0.caseInsensitiveCompare("Content-Type") == .orderedSame }) {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+
+        request.httpBody = bodyData
+        return PreparedAdvancedJSONRequest(
+            config: config,
+            request: request,
+            resolvedEndpoint: resolvedEndpoint
+        )
+    }
+
+    private func parseAdvancedJSONConfiguration(
+        _ rawConfiguration: String,
+        fallbackEndpoint: String
+    ) throws -> AdvancedJSONModeConfig {
+        let trimmed = rawConfiguration.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw AIError.requestFailed("Advanced JSON mode is empty. Paste a JSON configuration first.")
+        }
+        guard let data = trimmed.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) as? [String: Any] else {
+            throw AIError.requestFailed("Advanced JSON configuration is not valid JSON.")
+        }
+
+        let endpoint = (json["endpoint"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let method = ((json["method"] as? String)?.uppercased()).flatMap { $0.isEmpty ? nil : $0 } ?? "POST"
+        let headers = (json["headers"] as? [String: Any] ?? [:]).reduce(into: [String: String]()) { result, entry in
+            result[entry.key] = stringifyTemplateValue(entry.value)
+        }
+
+        guard let bodyTemplate = json["body"] else {
+            throw AIError.requestFailed("Advanced JSON configuration is missing `body`.")
+        }
+
+        let response = json["response"] as? [String: Any]
+        let streaming = json["streaming"] as? [String: Any]
+
+        return AdvancedJSONModeConfig(
+            endpoint: (endpoint?.isEmpty == false ? endpoint! : fallbackEndpoint),
+            method: method,
+            headers: headers,
+            bodyTemplate: bodyTemplate,
+            responseTextPath: (response?["text_path"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+            streamingEnabled: streaming?["enabled"] as? Bool ?? false,
+            streamTextPath: (streaming?["text_path"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+            streamLinePrefix: (streaming?["prefix"] as? String) ?? "data:",
+            streamDoneToken: (streaming?["done_token"] as? String) ?? "[DONE]"
+        )
+    }
+
+    private func placeholderContext(
+        endpoint: String,
+        apiKey: String,
+        apiHeaderName: String,
+        model: String,
+        systemPrompt: String,
+        userMessage: String,
+        temperature: Double,
+        maxTokens: Int,
+        streamResponse: Bool
+    ) -> [String: Any] {
+        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawKey = rawAPIKeyValue(from: apiKey).trimmingCharacters(in: .whitespacesAndNewlines)
+        let bearerKey = rawKey.isEmpty ? "" : "Bearer \(rawKey)"
+        let completionLimit = usesMaxCompletionTokens(for: trimmedModel) ? maxTokens : maxTokens
+
+        return [
+            "endpoint": endpoint,
+            "api_key": rawKey,
+            "api_key_bearer": bearerKey,
+            "api_header_name": normalizedAPIHeaderName(apiHeaderName),
+            "model": trimmedModel,
+            "system_prompt": systemPrompt,
+            "user_message": userMessage,
+            "temperature": temperature,
+            "stream": streamResponse,
+            "max_tokens": maxTokens,
+            "max_completion_tokens": completionLimit
+        ]
+    }
+
+    private func resolveJSONTemplate(_ value: Any, context: [String: Any]) -> Any {
+        if let dictionary = value as? [String: Any] {
+            return dictionary.reduce(into: [String: Any]()) { result, entry in
+                result[entry.key] = resolveJSONTemplate(entry.value, context: context)
+            }
+        }
+        if let array = value as? [Any] {
+            return array.map { resolveJSONTemplate($0, context: context) }
+        }
+        guard let string = value as? String else { return value }
+
+        if let exactKey = exactPlaceholderKey(in: string), let replacement = context[exactKey] {
+            return replacement
+        }
+
+        return interpolatedTemplateString(string, context: context)
+    }
+
+    private func exactPlaceholderKey(in string: String) -> String? {
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("{{"), trimmed.hasSuffix("}}") else { return nil }
+        let body = trimmed.dropFirst(2).dropLast(2).trimmingCharacters(in: .whitespacesAndNewlines)
+        return body.isEmpty ? nil : body
+    }
+
+    private func interpolatedTemplateString(_ template: String, context: [String: Any]) -> String {
+        var result = template
+        for (key, value) in context {
+            result = result.replacingOccurrences(
+                of: "{{\(key)}}",
+                with: stringifyTemplateValue(value)
+            )
+        }
+        return result
+    }
+
+    private func stringifyTemplateValue(_ value: Any) -> String {
+        switch value {
+        case let string as String:
+            return string
+        case let number as NSNumber:
+            return number.stringValue
+        case let bool as Bool:
+            return bool ? "true" : "false"
+        default:
+            return "\(value)"
+        }
+    }
+
+    private func advancedJSONResponseText(from data: Data, textPath: String?) throws -> String {
+        if let textPath, !textPath.isEmpty {
+            guard let json = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) else {
+                throw AIError.invalidResponse
+            }
+            if let message = apiErrorMessage(from: json), !message.isEmpty {
+                throw AIError.requestFailed(message)
+            }
+            guard let value = jsonValue(at: textPath, in: json),
+                  let text = stringContent(from: value),
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw AIError.invalidResponse
+            }
+            return text
+        }
+
+        let raw = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !raw.isEmpty {
+            return raw
+        }
+        throw AIError.noContent
+    }
+
+    private func apiErrorMessage(from json: Any) -> String? {
+        guard let dictionary = json as? [String: Any] else { return nil }
+        if let error = dictionary["error"] as? [String: Any],
+           let message = error["message"] as? String,
+           !message.isEmpty {
+            return message
+        }
+        if let error = dictionary["error"] as? String, !error.isEmpty {
+            return error
+        }
+        if let detail = dictionary["message"] as? String, !detail.isEmpty {
+            return detail
+        }
+        return nil
+    }
+
+    private func jsonValue(at path: String, in root: Any) -> Any? {
+        let segments = path.split(separator: ".").map(String.init)
+        guard !segments.isEmpty else { return nil }
+
+        var current: Any? = root
+        for segment in segments {
+            if let index = Int(segment), let array = current as? [Any], array.indices.contains(index) {
+                current = array[index]
+            } else if let dictionary = current as? [String: Any] {
+                current = dictionary[segment]
+            } else {
+                return nil
+            }
+        }
+        return current
+    }
+
+    private func stringContent(from value: Any) -> String? {
+        switch value {
+        case let string as String:
+            return string
+        case let number as NSNumber:
+            return number.stringValue
+        case let array as [Any]:
+            let joined = array.compactMap { stringContent(from: $0) }.joined()
+            return joined.isEmpty ? nil : joined
+        case let dictionary as [String: Any]:
+            if let text = dictionary["text"] as? String {
+                return text
+            }
+            if let content = dictionary["content"] as? String {
+                return content
+            }
+            return nil
+        default:
+            return nil
+        }
+    }
+
+    private func streamAdvancedJSON(
+        preparedRequest: PreparedAdvancedJSONRequest,
+        onStatus: @escaping (String) -> Void,
+        onPartial: ((String) -> Void)?,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        onStatus("Connecting to API...")
+        onStatus("Streaming custom JSON request...")
+
+        currentStreamingTask = Task { [weak self] in
+            var aggregated = ""
+            do {
+                let (bytes, response) = try await URLSession.shared.bytes(for: preparedRequest.request)
+                guard let http = response as? HTTPURLResponse else {
+                    throw AIError.invalidResponse
+                }
+                guard (200..<300).contains(http.statusCode) else {
+                    throw AIError.requestFailed("HTTP \(http.statusCode)")
+                }
+
+                let prefix = preparedRequest.config.streamLinePrefix
+                let doneToken = preparedRequest.config.streamDoneToken
+                let textPath = preparedRequest.config.streamTextPath
+
+                streamLoop: for try await line in bytes.lines {
+                    try Task.checkCancellation()
+                    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { continue }
+
+                    let payload: String
+                    if prefix.isEmpty {
+                        payload = trimmed
+                    } else {
+                        guard trimmed.hasPrefix(prefix) else { continue }
+                        payload = String(trimmed.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+
+                    guard !payload.isEmpty else { continue }
+                    if payload == doneToken {
+                        break streamLoop
+                    }
+
+                    let chunk: String
+                    if let textPath, !textPath.isEmpty {
+                        guard let payloadData = payload.data(using: .utf8),
+                              let json = try? JSONSerialization.jsonObject(with: payloadData, options: [.fragmentsAllowed]) else {
+                            continue
+                        }
+                        if let message = self?.apiErrorMessage(from: json), !message.isEmpty {
+                            throw AIError.requestFailed(message)
+                        }
+                        guard let value = self?.jsonValue(at: textPath, in: json),
+                              let text = self?.stringContent(from: value),
+                              !text.isEmpty else {
+                            continue
+                        }
+                        chunk = text
+                    } else {
+                        chunk = payload
+                    }
+
+                    aggregated += chunk
+                    if let onPartial {
+                        await MainActor.run { onPartial(aggregated) }
+                    }
+                }
+
+                let finalText = aggregated.trimmingCharacters(in: .whitespacesAndNewlines)
+                await MainActor.run {
+                    self?.currentStreamingTask = nil
+                    if finalText.isEmpty {
+                        completion(.failure(AIError.noContent))
+                    } else {
+                        completion(.success(finalText))
+                    }
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    self?.currentStreamingTask = nil
+                    completion(.failure(AIError.cancelled))
+                }
+            } catch let error as AIError {
+                await MainActor.run {
+                    self?.currentStreamingTask = nil
+                    completion(.failure(error))
+                }
+            } catch {
+                await MainActor.run {
+                    self?.currentStreamingTask = nil
+                    completion(.failure(AIError.requestFailed(error.localizedDescription)))
+                }
+            }
+        }
+    }
+
     private func normalizedAPIHeaderName(_ headerName: String) -> String {
         let trimmed = headerName.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "Authorization" : trimmed
@@ -803,8 +1396,21 @@ class AIService {
         apiKey: String,
         apiHeaderName: String,
         model: String,
+        requestStyle: APIRequestStyle,
+        advancedJSONConfiguration: String,
         completion: @escaping (Result<String, Error>) -> Void
     ) {
+        if requestStyle == .json {
+            diagnoseAdvancedJSONConfiguredAPI(
+                rawConfiguration: advancedJSONConfiguration,
+                fallbackEndpoint: endpoint,
+                fallbackAPIKey: apiKey,
+                fallbackAPIHeaderName: apiHeaderName,
+                fallbackModel: model,
+                completion: completion
+            )
+            return
+        }
         guard !apiKey.isEmpty else {
             completion(.failure(AIError.noAPIKey))
             return

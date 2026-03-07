@@ -33,6 +33,7 @@ struct SettingsView: View {
     @State private var showsAPIKey = false
     @State private var apiProfileNameDraft = ""
     @State private var apiProfileStatus = ""
+    @State private var advancedJSONStatus = ""
 
     init(onClose: (() -> Void)? = nil) {
         self.onClose = onClose
@@ -73,6 +74,14 @@ struct SettingsView: View {
                 refreshLocalModels()
             } else {
                 syncAPIProfileDraft()
+            }
+        }
+        .onChange(of: settings.aiAPIRequestStyleEnum) { _, newStyle in
+            resetAIDiagnostics()
+            advancedJSONStatus = ""
+            if newStyle == .json,
+               settings.aiAPIAdvancedJSONConfiguration.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                settings.aiAPIAdvancedJSONConfiguration = SettingsManager.defaultAdvancedAPIJSONConfiguration
             }
         }
     }
@@ -257,19 +266,35 @@ struct SettingsView: View {
     private var aiSettings: some View {
         VStack(spacing: 12) {
             settingsCard {
-                HStack {
-                    Spacer()
-                    choiceStrip(
-                        selection: Binding(
-                            get: { settings.aiModeEnum },
-                            set: { settings.aiModeEnum = $0 }
-                        ),
-                        options: AIMode.allCases.map { ($0.displayName, $0) }
-                    )
-                    Spacer()
+                VStack(spacing: 8) {
+                    HStack {
+                        Spacer()
+                        choiceStrip(
+                            selection: Binding(
+                                get: { settings.aiModeEnum },
+                                set: { settings.aiModeEnum = $0 }
+                            ),
+                            options: AIMode.allCases.map { ($0.displayName, $0) }
+                        )
+                        Spacer()
+                    }
+
+                    if settings.aiModeEnum == .api {
+                        HStack {
+                            Spacer()
+                            choiceStrip(
+                                selection: Binding(
+                                    get: { settings.aiAPIRequestStyleEnum },
+                                    set: { settings.aiAPIRequestStyleEnum = $0 }
+                                ),
+                                options: APIRequestStyle.allCases.map { ($0.displayName, $0) }
+                            )
+                            Spacer()
+                        }
+                    }
                 }
 
-                Text("Choose one provider path at a time and keep its fields separate.")
+                Text(aiSettingsIntroText)
                     .font(.system(size: 12))
                     .foregroundStyle(secondaryTextColor)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -277,6 +302,8 @@ struct SettingsView: View {
 
             if settings.aiModeEnum == .local {
                 localAISettingsCard
+            } else if settings.aiAPIRequestStyleEnum == .json {
+                advancedJSONCard
             } else {
                 apiProfilesCard
                 apiConnectionCard
@@ -285,9 +312,7 @@ struct SettingsView: View {
             settingsCard {
                 sectionHeader(
                     "Diagnostics",
-                    subtitle: settings.aiModeEnum == .local
-                    ? "Checks the local endpoint and fetches the available model list."
-                    : "Sends a real provider-aware API request using the active endpoint, header, and model."
+                    subtitle: diagnosticsSubtitleText
                 )
 
                 HStack(spacing: 8) {
@@ -545,6 +570,65 @@ struct SettingsView: View {
             Text("Supports OpenAI-compatible `/v1` bases and Anthropic-compatible `/anthropic` bases.")
                 .font(.system(size: 12))
                 .foregroundStyle(secondaryTextColor)
+        }
+    }
+
+    private var advancedJSONCard: some View {
+        settingsCard {
+            sectionHeader(
+                "Advanced JSON Mode",
+                subtitle: "Paste a full JSON request definition. Tab Note will execute it after replacing prompt placeholders."
+            )
+
+            HStack(spacing: 8) {
+                Button("Use Example") {
+                    settings.aiAPIAdvancedJSONConfiguration = SettingsManager.defaultAdvancedAPIJSONConfiguration
+                    resetAIDiagnostics()
+                }
+                .buttonStyle(SettingsPillButtonStyle(
+                    isDarkMode: settings.isDarkMode,
+                    tone: .accent,
+                    isSelected: false
+                ))
+
+                Button("Format JSON") {
+                    formatAdvancedJSONConfiguration()
+                }
+                .buttonStyle(SettingsPillButtonStyle(
+                    isDarkMode: settings.isDarkMode,
+                    tone: .neutral,
+                    isSelected: false
+                ))
+            }
+
+            TextEditor(text: Binding(
+                get: { settings.aiAPIAdvancedJSONConfiguration },
+                set: { settings.aiAPIAdvancedJSONConfiguration = $0 }
+            ))
+            .font(.system(size: 11, weight: .medium, design: .monospaced))
+            .foregroundStyle(primaryTextColor)
+            .scrollContentBackground(.hidden)
+            .frame(minHeight: 250, maxHeight: 250)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .fill(fieldFill)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .stroke(outlineColor, lineWidth: 1)
+            )
+
+            Text("Placeholders: `{{system_prompt}}`, `{{user_message}}`, `{{stream}}`, `{{temperature}}`, `{{max_tokens}}`, `{{max_completion_tokens}}`. Hardcode everything else directly in the JSON.")
+                .font(.system(size: 11))
+                .foregroundStyle(secondaryTextColor)
+
+            if !advancedJSONStatus.isEmpty {
+                Text(advancedJSONStatus)
+                    .font(.system(size: 11))
+                    .foregroundStyle(secondaryTextColor)
+            }
         }
     }
 
@@ -947,9 +1031,45 @@ struct SettingsView: View {
         resetAIDiagnostics()
     }
 
+    private func formatAdvancedJSONConfiguration() {
+        let trimmed = settings.aiAPIAdvancedJSONConfiguration.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let data = trimmed.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]),
+              let formattedData = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .fragmentsAllowed]),
+              let formattedString = String(data: formattedData, encoding: .utf8) else {
+            advancedJSONStatus = "Could not format JSON."
+            return
+        }
+        settings.aiAPIAdvancedJSONConfiguration = formattedString
+        advancedJSONStatus = "Formatted advanced JSON."
+    }
+
     private let hotkeyKeys: [(Int, String)] = SettingsManager.hotkeyKeyNames
         .map { ($0.key, $0.value) }
         .sorted { $0.1 < $1.1 }
+
+    private var aiSettingsIntroText: String {
+        switch settings.aiModeEnum {
+        case .local:
+            return "Choose one provider path at a time and keep its fields separate."
+        case .api where settings.aiAPIRequestStyleEnum == .json:
+            return "JSON mode bypasses the built-in provider mapping so you can paste the exact request shape you want."
+        case .api:
+            return "Standard mode keeps the guided endpoint, header, key, and model fields."
+        }
+    }
+
+    private var diagnosticsSubtitleText: String {
+        switch settings.aiModeEnum {
+        case .local:
+            return "Checks the local endpoint and fetches the available model list."
+        case .api where settings.aiAPIRequestStyleEnum == .json:
+            return "Executes the pasted JSON request definition with the connectivity test prompts."
+        case .api:
+            return "Sends a real provider-aware API request using the active endpoint, header, and model."
+        }
+    }
 }
 
 private struct SettingsPillButtonStyle: ButtonStyle {

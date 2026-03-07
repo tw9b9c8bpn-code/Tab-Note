@@ -59,6 +59,18 @@ enum AIMode: String, CaseIterable {
     }
 }
 
+enum APIRequestStyle: String, CaseIterable {
+    case standard = "standard"
+    case json = "json"
+
+    var displayName: String {
+        switch self {
+        case .standard: return "Standard"
+        case .json: return "JSON"
+        }
+    }
+}
+
 struct AIAPIProfile: Identifiable, Codable, Equatable {
     var id: String
     var name: String
@@ -105,6 +117,8 @@ class SettingsManager: ObservableObject {
     private let aiAPIModelKey = "aiAPIModel"
     private let aiAPISavedProfilesKey = "aiAPISavedProfiles"
     private let aiAPISelectedProfileIDKey = "aiAPISelectedProfileID"
+    private let aiAPIRequestStyleKey = "aiAPIRequestStyle"
+    private let aiAPIAdvancedJSONConfigurationKey = "aiAPIAdvancedJSONConfiguration"
     private let settingsPanelWidthKey = "settingsPanelWidth"
     private let settingsPanelHeightKey = "settingsPanelHeight"
 
@@ -143,6 +157,17 @@ class SettingsManager: ObservableObject {
     var aiAPIModel: String {
         get { defaults.string(forKey: aiAPIModelKey) ?? "" }
         set { objectWillChange.send(); defaults.set(newValue, forKey: aiAPIModelKey) }
+    }
+    var aiAPIRequestStyle: String {
+        get { defaults.string(forKey: aiAPIRequestStyleKey) ?? APIRequestStyle.standard.rawValue }
+        set { objectWillChange.send(); defaults.set(newValue, forKey: aiAPIRequestStyleKey) }
+    }
+    var aiAPIAdvancedJSONConfiguration: String {
+        get {
+            defaults.string(forKey: aiAPIAdvancedJSONConfigurationKey)
+                ?? SettingsManager.defaultAdvancedAPIJSONConfiguration
+        }
+        set { objectWillChange.send(); defaults.set(newValue, forKey: aiAPIAdvancedJSONConfigurationKey) }
     }
     var aiAPISavedProfiles: [AIAPIProfile] {
         get {
@@ -285,12 +310,17 @@ class SettingsManager: ObservableObject {
         set { aiMode = newValue.rawValue }
     }
 
+    var aiAPIRequestStyleEnum: APIRequestStyle {
+        get { APIRequestStyle(rawValue: aiAPIRequestStyle) ?? .standard }
+        set { aiAPIRequestStyle = newValue.rawValue }
+    }
+
     var currentAIEndpoint: String {
         switch aiModeEnum {
         case .local:
             return aiLocalEndpoint
         case .api:
-            return aiAPIEndpoint
+            return aiAPIRequestStyleEnum == .json ? "Advanced JSON" : aiAPIEndpoint
         }
     }
 
@@ -299,7 +329,7 @@ class SettingsManager: ObservableObject {
         case .local:
             return aiLocalModel
         case .api:
-            return aiAPIModel
+            return aiAPIRequestStyleEnum == .json ? "Custom JSON" : aiAPIModel
         }
     }
 
@@ -478,4 +508,39 @@ class SettingsManager: ObservableObject {
             }
         }
     }
+
+    static let defaultAdvancedAPIJSONConfiguration = """
+    {
+      "endpoint": "https://api.openai.com/v1/chat/completions",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer REPLACE_WITH_REAL_KEY",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "model": "gpt-5-nano",
+        "messages": [
+          {
+            "role": "system",
+            "content": "{{system_prompt}}"
+          },
+          {
+            "role": "user",
+            "content": "{{user_message}}"
+          }
+        ],
+        "max_completion_tokens": "{{max_completion_tokens}}",
+        "stream": "{{stream}}"
+      },
+      "response": {
+        "text_path": "choices.0.message.content"
+      },
+      "streaming": {
+        "enabled": true,
+        "text_path": "choices.0.delta.content",
+        "prefix": "data:",
+        "done_token": "[DONE]"
+      }
+    }
+    """
 }

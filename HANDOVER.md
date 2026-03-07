@@ -1,5 +1,30 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-08, advanced JSON API mode)
+- Added persisted Advanced JSON API mode in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsManager.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/NoteEditorView.swift`
+- Feature changes:
+  - API settings now support `Standard` and `JSON` request styles
+  - JSON mode provides a full pasted JSON request editor with a built-in example and format action
+  - JSON mode bypasses the built-in provider transport mapping and executes the pasted request definition directly after placeholder replacement
+  - inline AI requests, follow-ups, and diagnostics all carry the same JSON mode configuration instead of falling back to standard API fields
+- Supported JSON placeholders:
+  - `{{system_prompt}}`
+  - `{{user_message}}`
+  - `{{stream}}`
+  - `{{temperature}}`
+  - `{{max_tokens}}`
+  - `{{max_completion_tokens}}`
+- Preferences / dislikes reinforced from user feedback:
+  - does not want the API backend to behave like a black box
+  - wants an advanced JSON mode where they can paste the full request config and be done
+  - prefers compact settings density over airy pill spacing
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had treated advanced JSON configuration as optional future polish, but the actual requirement was a real backend bypass path for users who do not want provider-specific request assumptions at all.
+
 ## Completed in this pass (2026-03-08, compact settings density + GPT-5 temperature fix)
 - Tightened settings UI density in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`

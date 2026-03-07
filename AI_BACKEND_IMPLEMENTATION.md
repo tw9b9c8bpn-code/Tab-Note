@@ -22,6 +22,15 @@ This document exists because the AI backend went through several incorrect itera
 - API mode supports saved profiles that store endpoint, header, key, and model together for quick switching.
 - OpenAI-compatible payloads are not fully uniform across model families; GPT-5-family models need `max_completion_tokens` instead of `max_tokens`.
 - OpenAI-compatible GPT-5/reasoning-family models also reject custom sampling fields like `temperature`; omit them and let the provider use its default.
+- API mode now also supports an Advanced JSON mode that bypasses built-in provider mapping entirely.
+- Advanced JSON mode owns the full request shape:
+  - endpoint
+  - headers
+  - JSON body template
+  - response text path
+  - optional streaming path/prefix/done token
+- Advanced JSON mode is intentionally not a thin wrapper around OpenAI-compatible assumptions. Do not inject provider-specific fields into it.
+- Advanced JSON mode supports placeholder replacement for runtime values such as `{{system_prompt}}`, `{{user_message}}`, `{{stream}}`, `{{temperature}}`, `{{max_tokens}}`, and `{{max_completion_tokens}}`.
 
 ## Implementation iterations
 
@@ -42,6 +51,19 @@ Current rule:
   - API model
   - API key
   - API header
+
+### Iteration 7: JSON mode as a real bypass
+
+Wrong assumption:
+- Advanced configuration could stay as a future idea while the built-in provider adapters kept covering most users.
+
+Why it failed:
+- Users who work from provider docs or custom gateways do not want backend inference or hidden parameter mutation.
+- The built-in adapters still expose transport-specific assumptions like token fields or sampling rules.
+
+Current rule:
+- JSON mode is a first-class request path.
+- When JSON mode is selected, the app should execute the pasted JSON request definition after placeholder replacement and should not reshape it into OpenAI-compatible or Anthropic-compatible payloads.
 
 ### Iteration 2: Hardcoded `Authorization`
 
