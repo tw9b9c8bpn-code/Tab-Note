@@ -1,5 +1,28 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-07, backend iteration doc + thinking row cleanup)
+- Added a dedicated backend implementation note in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/AI_BACKEND_IMPLEMENTATION.md`
+- Documentation changes:
+  - documented the API backend iteration history clearly so future AI can see which assumptions were already proven wrong
+  - wrote down the current rules for Local/API separation, protocol detection, diagnostics, auth handling, and inline popup visibility
+  - explicitly documented that MiniMax OpenAI-compatible completion works while `/v1/models` can still return `404`, so diagnostics must use a real completion request
+- Updated inline popup status and answer visibility in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/NoteEditorView.swift`
+- UI/behavior changes:
+  - the thinking row now carries duration, `tps`, and estimated cost in one line using `|` separators
+  - removed the `avg` wording from the completed `tps` label
+  - cost was moved off the top-right metrics line and into the thinking row
+  - hidden reasoning blocks such as `<think>...</think>` are now stripped from both streaming and completed answers before rendering, so the popup only shows the visible answer
+- Preferences / dislikes reinforced from user feedback:
+  - prefers backend lessons to be documented explicitly so future AI do not redesign the assistant around already disproven assumptions
+  - prefers the thinking row to read as one compact status line with duration, speed, and cost together
+  - dislikes showing provider chain-of-thought or pre-answer reasoning text in the popup body
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had spread the backend history across handover notes only, but the user needs a dedicated implementation note future AI can follow directly.
+  - I had left cost split between the metrics area and the thinking row, but the preferred design is one compact status line.
+  - I had fixed provider transport and diagnostics earlier without fully filtering provider reasoning blocks from the rendered popup output.
+
 ## Completed in this pass (2026-03-07, MiniMax diagnostics fix + live TPS status)
 - Reworked API diagnostics in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`

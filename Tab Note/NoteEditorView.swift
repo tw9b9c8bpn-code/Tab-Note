@@ -11,6 +11,37 @@ private func formattedThinkingDuration(_ seconds: TimeInterval) -> String {
     String(format: "%.2f", max(0, seconds))
 }
 
+private func normalizedLineEndings(_ text: String) -> String {
+    text
+        .replacingOccurrences(of: "\r\n", with: "\n")
+        .replacingOccurrences(of: "\r", with: "\n")
+}
+
+private func strippingHiddenReasoning(from text: String) -> String {
+    var sanitized = normalizedLineEndings(text)
+    let hiddenTags = ["think", "thinking", "reasoning"]
+
+    for tag in hiddenTags {
+        sanitized = sanitized.replacingOccurrences(
+            of: #"(?is)<\#(tag)\b[^>]*>.*?</\#(tag)>"#,
+            with: "",
+            options: .regularExpression
+        )
+        sanitized = sanitized.replacingOccurrences(
+            of: #"(?is)<\#(tag)\b[^>]*>.*$"#,
+            with: "",
+            options: .regularExpression
+        )
+        sanitized = sanitized.replacingOccurrences(
+            of: #"(?is)</\#(tag)>"#,
+            with: "",
+            options: .regularExpression
+        )
+    }
+
+    return sanitized
+}
+
 private func estimatedTokenCount(for text: String) -> Int {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return 0 }
@@ -1269,19 +1300,13 @@ private final class InlineAnswerPanelModel: ObservableObject {
         if isStreaming {
             return ThoughtStatusDisplay(
                 primaryText: "Thinking... \(formattedThinkingDuration(elapsedThinkingSeconds))s",
-                secondaryText: thoughtTokensPerSecondText(
-                    duration: elapsedThinkingSeconds,
-                    label: "live tps"
-                )
+                secondaryText: thoughtTokensPerSecondText(duration: elapsedThinkingSeconds)
             )
         }
         if let lastThoughtDurationSeconds {
             return ThoughtStatusDisplay(
                 primaryText: "Thought for \(formattedThinkingDuration(lastThoughtDurationSeconds))s",
-                secondaryText: thoughtTokensPerSecondText(
-                    duration: lastThoughtDurationSeconds,
-                    label: "avg tps"
-                )
+                secondaryText: thoughtTokensPerSecondText(duration: lastThoughtDurationSeconds)
             )
         }
         return nil
@@ -1420,10 +1445,10 @@ private final class InlineAnswerPanelModel: ObservableObject {
         summaryChip = SettingsManager.makeAIPromptSummaryChip(selection: promptSelection)
     }
 
-    private func thoughtTokensPerSecondText(duration: TimeInterval, label: String) -> String {
+    private func thoughtTokensPerSecondText(duration: TimeInterval) -> String {
         let tokens = estimatedTokenCount(for: rawAnswer)
         let rate = duration > 0 ? Double(tokens) / duration : 0
-        return "\(formattedTokensPerSecond(rate)) \(label)"
+        return "\(formattedTokensPerSecond(rate)) tps"
     }
 }
 
@@ -1820,9 +1845,7 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
     }
 
     private func normalizeCompletedAnswer(_ raw: String) -> String {
-        var text = raw
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
+        var text = strippingHiddenReasoning(from: raw)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         text = text.replacingOccurrences(of: #":(?=[A-Za-z])"#, with: ": ", options: .regularExpression)
@@ -1848,9 +1871,7 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
     }
 
     private func normalizeStreamingAnswer(_ raw: String) -> String {
-        raw
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
+        strippingHiddenReasoning(from: raw)
     }
 
     private func postInlineAIStatus(_ status: String, inFlight: Bool, windowID: String) {
@@ -1894,9 +1915,7 @@ private struct InlineCursorAnswerPopoverView: View {
     }
 
     static func preparedAnswerText(from raw: String) -> String {
-        var text = raw
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
+        var text = strippingHiddenReasoning(from: raw)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         text = text.replacingOccurrences(of: #":(?=[A-Za-z])"#, with: ": ", options: .regularExpression)
@@ -2461,11 +2480,20 @@ private struct InlineCursorAnswerPopoverView: View {
     }
 
     private var metricsLine: String {
-        "\(metrics.words)w • ~\(metrics.tokens)t • \(Self.formattedCost(metrics.estimatedCost))"
+        "\(metrics.words)w • ~\(metrics.tokens)t"
     }
 
     private var thoughtStatus: ThoughtStatusDisplay? {
-        model.thoughtStatus
+        guard let baseStatus = model.thoughtStatus else { return nil }
+        let costText = Self.formattedCost(metrics.estimatedCost)
+        let secondaryParts = [baseStatus.secondaryText, costText]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        return ThoughtStatusDisplay(
+            primaryText: baseStatus.primaryText,
+            secondaryText: secondaryParts.isEmpty ? nil : secondaryParts.joined(separator: " | ")
+        )
     }
 
     private var shouldShowAnswerBody: Bool {
@@ -2947,7 +2975,7 @@ private struct ThoughtStatusText: View {
                 .font(.system(size: fontSize, weight: .semibold))
 
             if let secondaryText, !secondaryText.isEmpty {
-                Text(" \(secondaryText)")
+                Text(" | \(secondaryText)")
                     .font(.system(size: fontSize - 0.5, weight: .regular, design: .monospaced))
             }
         }
