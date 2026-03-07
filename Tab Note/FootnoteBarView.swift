@@ -166,6 +166,10 @@ struct FootnoteBarView: View {
 
     // MARK: - AI
 
+    private var promptConfig: PromptInjectionConfiguration {
+        settings.promptInjectionConfiguration
+    }
+
     private var aiPromptMatrixBar: some View {
         HStack(spacing: 2) {
             lengthPresetQuickPicker
@@ -183,9 +187,9 @@ struct FootnoteBarView: View {
 
     private var lengthPresetQuickPicker: some View {
         HStack(spacing: 1) {
-            ForEach(AIResponseLengthPreset.allCases, id: \.rawValue) { option in
+            ForEach(promptConfig.responseLengthOptions, id: \.id) { option in
                 Button {
-                    settings.aiResponseLengthPresetEnum = option
+                    settings.aiResponseLengthID = option.id
                 } label: {
                     lengthQuickPickLabel(option)
                 }
@@ -194,12 +198,12 @@ struct FootnoteBarView: View {
         }
     }
 
-    private func lengthQuickPickLabel(_ option: AIResponseLengthPreset) -> some View {
-        let isSelected = settings.aiResponseLengthPresetEnum == option
+    private func lengthQuickPickLabel(_ option: PromptInjectionOption) -> some View {
+        let isSelected = settings.aiResponseLengthID == option.id
         let activeText = settings.isDarkMode ? Color.white.opacity(0.95) : Color.black.opacity(0.95)
         let inactiveText = settings.isDarkMode ? Color.white.opacity(0.32) : Color.black.opacity(0.32)
         let stroke = settings.isDarkMode ? Color.white : Color.black
-        return Text(option.displayName)
+        return Text(option.label)
             .font(.system(size: 8, weight: .medium, design: .monospaced))
             .foregroundColor(isSelected ? activeText : inactiveText)
             .frame(width: 18, height: 18)
@@ -208,29 +212,40 @@ struct FootnoteBarView: View {
                     .stroke(stroke, lineWidth: isSelected ? 0.85 : 0)
             )
             .contentShape(Circle())
-            .help("Response length: \(option.displayName)")
+            .help("Response length: \(option.helper ?? option.label)")
     }
 
     private var responseModeMenu: some View {
         Button(action: toggleResponseModePopover) {
             matrixMenuIcon(
                 symbol: "list.bullet.rectangle.portrait",
-                isActive: settings.aiResponseModePresetEnum != .none
+                isActive: settings.aiResponseModeID != nil
             )
         }
         .buttonStyle(.plain)
-        .help("Response mode: \(settings.aiResponseModePresetEnum.menuTitle)")
+        .help("Response mode: \(promptConfig.responseModeMenuLabel(for: settings.aiResponseModeID))")
         .popover(isPresented: $showResponseModePopover, arrowEdge: .top) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
-                    ForEach(AIResponseModePreset.allCases, id: \.rawValue) { option in
+                    Button {
+                        settings.aiResponseModeID = nil
+                        showResponseModePopover = false
+                    } label: {
+                        selectorRow(
+                            title: "None",
+                            isSelected: settings.aiResponseModeID == nil
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    ForEach(promptConfig.responseModeOptions, id: \.id) { option in
                         Button {
-                            settings.aiResponseModePresetEnum = option
+                            settings.aiResponseModeID = option.id
                             showResponseModePopover = false
                         } label: {
                             selectorRow(
-                                title: option.menuTitle,
-                                isSelected: settings.aiResponseModePresetEnum == option
+                                title: promptConfig.responseModeMenuLabel(for: option.id),
+                                isSelected: settings.aiResponseModeID == option.id
                             )
                         }
                         .buttonStyle(.plain)
@@ -246,22 +261,33 @@ struct FootnoteBarView: View {
         Button(action: toggleExpertModePopover) {
             matrixMenuIcon(
                 symbol: "graduationcap",
-                isActive: settings.aiExpertDisciplinePresetEnum != .none
+                isActive: settings.aiExpertModeID != nil
             )
         }
         .buttonStyle(.plain)
-        .help("Expert mode: \(settings.aiExpertDisciplinePresetEnum.menuTitle)")
+        .help("Expert mode: \(promptConfig.expertModeMenuLabel(for: settings.aiExpertModeID))")
         .popover(isPresented: $showExpertModePopover, arrowEdge: .top) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
-                    ForEach(AIExpertDisciplinePreset.allCases, id: \.rawValue) { option in
+                    Button {
+                        settings.aiExpertModeID = nil
+                        showExpertModePopover = false
+                    } label: {
+                        selectorRow(
+                            title: "None",
+                            isSelected: settings.aiExpertModeID == nil
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    ForEach(promptConfig.expertModeOptions, id: \.id) { option in
                         Button {
-                            settings.aiExpertDisciplinePresetEnum = option
+                            settings.aiExpertModeID = option.id
                             showExpertModePopover = false
                         } label: {
                             selectorRow(
-                                title: option.menuTitle,
-                                isSelected: settings.aiExpertDisciplinePresetEnum == option
+                                title: promptConfig.expertModeMenuLabel(for: option.id),
+                                isSelected: settings.aiExpertModeID == option.id
                             )
                         }
                         .buttonStyle(.plain)
@@ -277,22 +303,33 @@ struct FootnoteBarView: View {
         Button(action: toggleVoiceModePopover) {
             matrixMenuIcon(
                 symbol: "quote.bubble",
-                isActive: settings.aiVoiceFigurePresetEnum != .none
+                isActive: settings.aiVoiceModeID != nil
             )
         }
         .buttonStyle(.plain)
-        .help("Voice mode: \(settings.aiVoiceFigurePresetEnum.menuTitle)")
+        .help("Voice mode: \(promptConfig.voiceModeMenuLabel(for: settings.aiVoiceModeID))")
         .popover(isPresented: $showVoiceModePopover, arrowEdge: .top) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
-                    ForEach(AIVoiceFigurePreset.allCases, id: \.rawValue) { option in
+                    Button {
+                        settings.aiVoiceModeID = nil
+                        showVoiceModePopover = false
+                    } label: {
+                        selectorRow(
+                            title: "None",
+                            isSelected: settings.aiVoiceModeID == nil
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    ForEach(promptConfig.voiceModeOptions, id: \.id) { option in
                         Button {
-                            settings.aiVoiceFigurePresetEnum = option
+                            settings.aiVoiceModeID = option.id
                             showVoiceModePopover = false
                         } label: {
                             selectorRow(
-                                title: option.menuTitle,
-                                isSelected: settings.aiVoiceFigurePresetEnum == option
+                                title: promptConfig.voiceModeMenuLabel(for: option.id),
+                                isSelected: settings.aiVoiceModeID == option.id
                             )
                         }
                         .buttonStyle(.plain)
@@ -339,10 +376,7 @@ struct FootnoteBarView: View {
     }
 
     private func clearAIPromptSelections() {
-        settings.aiResponseLengthPresetEnum = .l
-        settings.aiResponseModePresetEnum = .none
-        settings.aiExpertDisciplinePresetEnum = .none
-        settings.aiVoiceFigurePresetEnum = .none
+        settings.resetAIPromptSelection()
     }
 
     private func toggleResponseModePopover() {

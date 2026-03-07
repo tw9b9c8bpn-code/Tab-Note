@@ -24,29 +24,20 @@ class AIService {
         var endpoint: String
         var apiKey: String
         var model: String
-        var responseLengthPreset: AIResponseLengthPreset
-        var responseModePreset: AIResponseModePreset
-        var expertDisciplinePreset: AIExpertDisciplinePreset
-        var voiceFigurePreset: AIVoiceFigurePreset
+        var promptSelection: PromptInjectionSelection
 
         init(
             aiMode: AIMode,
             endpoint: String,
             apiKey: String,
             model: String,
-            responseLengthPreset: AIResponseLengthPreset,
-            responseModePreset: AIResponseModePreset,
-            expertDisciplinePreset: AIExpertDisciplinePreset,
-            voiceFigurePreset: AIVoiceFigurePreset
+            promptSelection: PromptInjectionSelection
         ) {
             self.aiMode = aiMode
             self.endpoint = endpoint
             self.apiKey = apiKey
             self.model = model
-            self.responseLengthPreset = responseLengthPreset
-            self.responseModePreset = responseModePreset
-            self.expertDisciplinePreset = expertDisciplinePreset
-            self.voiceFigurePreset = voiceFigurePreset
+            self.promptSelection = PromptInjectionConfigurationStore.shared.configuration.normalized(promptSelection)
         }
 
         init(settings: SettingsManager) {
@@ -55,36 +46,23 @@ class AIService {
                 endpoint: settings.aiEndpoint,
                 apiKey: settings.aiApiKey,
                 model: settings.aiModel,
-                responseLengthPreset: settings.aiResponseLengthPresetEnum,
-                responseModePreset: settings.aiResponseModePresetEnum,
-                expertDisciplinePreset: settings.aiExpertDisciplinePresetEnum,
-                voiceFigurePreset: settings.aiVoiceFigurePresetEnum
+                promptSelection: settings.aiPromptSelection
             )
         }
 
         var summaryChip: String {
-            SettingsManager.makeAIPromptSummaryChip(
-                length: responseLengthPreset,
-                mode: responseModePreset,
-                expert: expertDisciplinePreset,
-                voice: voiceFigurePreset
-            )
+            SettingsManager.makeAIPromptSummaryChip(selection: promptSelection)
         }
 
         var maxTokens: Int {
-            switch responseLengthPreset {
-            case .xs: return 80
-            case .s: return 220
-            case .m: return 520
-            case .l: return 900
-            case .xl: return 1600
-            }
+            PromptInjectionConfigurationStore.shared.configuration.responseLengthMaxTokens(
+                for: promptSelection.responseLengthID
+            )
         }
 
-        var lengthInstruction: String { responseLengthPreset.injectionInstruction }
-        var modeInstruction: String { responseModePreset.injectionInstruction }
-        var expertInstruction: String { expertDisciplinePreset.injectionInstruction }
-        var voiceInstruction: String { voiceFigurePreset.injectionInstruction }
+        var customDirectives: String {
+            PromptInjectionConfigurationStore.shared.configuration.instruction(for: promptSelection)
+        }
     }
 
     var isRequestInFlight: Bool {
@@ -230,14 +208,7 @@ class AIService {
             return
         }
 
-        let lengthInstruction = options.lengthInstruction
-        let modeInstruction = options.modeInstruction
-        let expertInstruction = options.expertInstruction
-        let voiceInstruction = options.voiceInstruction
-        let customDirectives = [lengthInstruction, modeInstruction, expertInstruction, voiceInstruction]
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n")
+        let customDirectives = options.customDirectives
 
         let systemPrompt = """
         You are an assistant embedded in a note editor. \
@@ -307,15 +278,7 @@ class AIService {
             return
         }
 
-        let customDirectives = [
-            options.lengthInstruction,
-            options.modeInstruction,
-            options.expertInstruction,
-            options.voiceInstruction
-        ]
-        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        .filter { !$0.isEmpty }
-        .joined(separator: "\n")
+        let customDirectives = options.customDirectives
 
         let systemPrompt = """
         You are an assistant embedded in a note editor. \

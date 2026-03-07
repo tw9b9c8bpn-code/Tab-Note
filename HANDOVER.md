@@ -1,5 +1,37 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-07, unified prompt injection manifest)
+- Replaced the hardcoded prompt injection enums/labels with a data-backed configuration layer shared with Octopus.AI.
+- Added bundled manifest assets under:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/PromptInjection/options.catalog.json`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/PromptInjection/tab-note.profile.json`
+- Runtime shared config path is now:
+  - `~/Library/Application Support/KienConfig/PromptInjection/`
+- App bootstraps the shared files into that folder if missing, then reads external files first so both apps can converge on the same catalog/profile model.
+- Canonical dimensions now match the Octopus system:
+  - `response_length`
+  - `response_mode`
+  - `expert_mode`
+  - `voice_mode`
+- `SettingsManager`, footnote controls, inline AI options, and popup menus now render from manifest IDs instead of hardcoded Swift enums.
+- Added legacy ID normalization so old saved selections still map into canonical IDs.
+
+## User preferences and dislikes
+- Prefers one unified, scalable, data-based prompt injection system across apps.
+- Dislikes duplicated hardcoded prompt config living separately in each app.
+- Prefers cleaner Swift with prompt rules/options stored in manifest-style data rather than embedded UI logic.
+
+## Completed in this pass (2026-03-07, speech task handoff checkpoint)
+- Used `speech` skill path and validated environment for TTS generation request.
+- Confirmed bundled CLI exists at:
+  - `/Users/kientran/.codex/skills/speech/scripts/text_to_speech.py`
+- Current blocker:
+  - `OPENAI_API_KEY` is not set in this shell (and also missing in interactive `zsh`), so no live audio can be generated yet.
+- Ready-to-run command once key is set:
+  - `export CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"`
+  - `export TTS_GEN="$CODEX_HOME/skills/speech/scripts/text_to_speech.py"`
+  - `python "$TTS_GEN" speak --input "<USER_TEXT>" --voice cedar --instructions "Voice Affect: Clear and grounded. Tone: Curious and practical. Pacing: Steady, slightly brisk. Emotion: Thoughtful and confident. Pronunciation: Enunciate SwiftUI, AI popup, and deterministic clearly. Pauses: Brief pause after each question block. Emphasis: Stress 'what does it really mean', 'can it really be achieved', and 'crash course'." --response-format mp3 --out "/Users/kientran/Desktop/KiensApps/output/speech/local-model-and-tab-note-questions.mp3"`
+
 ## Completed in this pass
 - Fixed rich text persistence and tab-switch resets:
   - `NoteEditorView` now saves RTF on style changes.
@@ -48,9 +80,6 @@
   - `beginTabDrag`, `updateTabDrag`, `finishTabDrag` wire gesture updates into store + existing detach/merge handler.
 - Added tab context menu action:
   - Right-click tab -> `Open in New Window` now detaches that tab using existing `detachNoteToNewWindow(...)`.
-- Build verification:
-  - `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-05, packaging)
 - Used `macos-app-release-packager` skill workflow.
 - Release gate check executed:
@@ -180,9 +209,6 @@
   - Detects sentence around caret, calls AI with strict constraints (plain text, one paragraph, <100 words), and inserts response on a new line below that sentence.
   - Preserves rich-text/undo pipeline by inserting through editor undo-aware replacement.
   - Guards against duplicate in-flight requests and cross-tab note switches during response.
-- Build verification:
-  - `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, inline AI popup + status streaming)
 - Changed inline question-answer behavior (`?` and `???`):
   - AI no longer inserts text into the note body.
@@ -192,9 +218,6 @@
   - Footnote now updates status text + spinner in real time while inline AI is working.
 - Added cancellation/status safety:
   - If user switches notes mid-request, inline job is marked cancelled and status is cleared cleanly.
-- Build verification:
-  - `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, AI matrix panel + popup sizing)
 - Inline AI answer popover now adapts size to response length (dynamic width/height with min/max bounds).
 - Revamped footnote AI controls:
@@ -205,9 +228,6 @@
 - `???` remains the master trigger for inline AI response generation.
 - Added local hotkey `Cmd+Option+A` to toggle AI matrix panel per active window.
 - AI inline generation now injects selected matrix instructions from settings into the prompt pipeline.
-- Build verification:
-  - `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, ??? paragraph capture fix)
 - Changed inline AI trigger context extraction from sentence-level to paragraph-level:
   - `???` now sends the full paragraph containing the cursor to AI.
@@ -215,9 +235,6 @@
   - trailing `???` marker is stripped from paragraph before sending to AI context.
 - Updated inline status phrasing from sentence -> paragraph for clarity.
 - Updated AI prompt wording to reflect paragraph context.
-- Build verification:
-  - `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, AI footnote icon matrix + Cmd+Opt+A fix)
 - AI matrix controls updated in footnote panel:
   - Removed visible `Length` / `Mode` text labels.
@@ -238,9 +255,6 @@
 - Defaults adjusted to neutral behavior:
   - response length default -> `L` (no forced limit instruction)
   - response mode default -> `None`
-- Build verification:
-  - `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, AI footnote polish + new trigger)
 - Main footnote AI control is now icon-only (`wand.and.stars`) with no background shape.
 - AI matrix row refinements:
@@ -255,9 +269,6 @@
   - Header now shows active AI summary chip (e.g. `M • FP • Psy • Rand`) instead of static `AI Answer`.
   - Response body now renders rich text from Markdown when present.
   - Prompt instructions now explicitly allow readability-focused lightweight Markdown output.
-- Build verification:
-  - `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, AI footnote sizing/UI tune)
 - AI footnote mode icon sizing normalized:
   - mode/expert/voice/trash now share unified compact icon metrics for visual consistency.
@@ -268,9 +279,6 @@
 - Inline AI response popover sizing made more adaptive:
   - short answers now use compact widths/heights
   - longer answers expand width/height via measured text layout up to larger caps.
-- Build verification:
-  - `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, compactness pass per UI feedback)
 - Compressed AI footnote layout to remove spaced-out look:
   - reduced row horizontal padding
@@ -283,9 +291,6 @@
 - Length selector visual tightening:
   - no background/fill shapes; text + optional tight circle stroke only.
   - inactive text now dimmed directly (no inactive ring/shape).
-- Build verification:
-  - `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, remove default control chrome from AI footnote)
 - Root cause of “big gray capsules” identified:
   - length buttons were still inheriting default macOS button chrome.
@@ -294,9 +299,6 @@
   - length picker buttons now explicitly `buttonStyle(.plain)` (no default background shapes).
   - mode/expert/voice switched from `Menu` controls to plain icon buttons + compact custom popovers.
   - icon metrics and inactive opacity reduced again for subtle appearance.
-- Build verification:
-  - `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, paragraph formatting + icon scale tweak)
 - Inline AI answer readability improvements:
   - prompt now explicitly requires blank lines between paragraphs and avoids heading-body merges.
@@ -306,9 +308,6 @@
   - all AI matrix icons increased (about 50%) via shared control metrics.
   - added explicit spacer gap between response-length picker and mode/expert/voice icons.
   - length picker text/circle also scaled up accordingly.
-- Build verification:
-  - `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, markdown rendering + focus hotkey)
 - Inline AI popover markdown rendering hardened:
   - Added preprocessing for malformed speaker-label markdown and glued heading/body text.
@@ -317,17 +316,12 @@
 - Inline AI popover sizing now measures prepared text (post-normalization), improving short vs long response fit.
 - Focus-mode hotkey robustness:
   - `Cmd+Shift+H` detection now uses layout-safe matching (physical keycode or character), mirroring the `Cmd+Shift+I` approach.
-- Build verification:
-  - `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, AI popover metrics + font toggle fix)
 - AI response popover header now shows compact metadata at top-right: word count, estimated token count, and estimated cost.
 - Popover sizing logic expanded to use screen-aware width/height caps and larger candidates so long responses require less scrolling.
 - Fixed unwanted line breaks before normal inline bold text by narrowing paragraph-splitting regex to speaker/label patterns only.
 - Font toggle now truly applies selected font family to existing rich-text content (preserving point size and bold/italic traits), not just future typing.
 - Removed background shape from the font toggle control in footnote (plain icon/text style only).
-- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, copy UX + reopen mechanism)
 - AI popover content now renders as one continuous rich-text block (still preserving paragraph breaks), allowing cross-paragraph selection/copy in a single drag.
 - Added spacing normalization around inline bold markers so text no longer glues to `**bold**` tokens.
@@ -336,8 +330,6 @@
   - After an AI response is generated, a tiny reopen icon appears near that position.
   - Clicking it reopens the last AI response popover after transient dismissal.
 - Recovery UI is cleared on tab switches to avoid stale anchors.
-- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, inline AI markers + cancel + resizable popover)
 - `Escape` now cancels in-flight inline AI generation through a cancelable `AIService` request path.
 - Replaced floating recovery button with inline `ℹ` markers stored in rich text via custom link payloads:
@@ -351,8 +343,6 @@
   - supports a bottom-right `Copy All` action,
   - uses flexible layout so resize can expand content instead of fighting a fixed frame.
 - Popover window is configured as resizable after presentation; manual runtime verification still recommended for the actual resize affordance feel on macOS.
-- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, AI popover renderer + sizing hardening)
 - AI marker placement is now anchored to the actual inline trigger/question mark location instead of a looser cursor position:
   - new markers stack immediately to the right of existing markers at that trigger.
@@ -366,8 +356,6 @@
   - `Copy All` is now a subtle icon button.
 - Added explicit bottom-right resize grip inside the popover and kept hard caps at `380w x 600h`.
 - Marker icon was enlarged to a filled `info.circle.fill` attachment for easier hit-testing.
-- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, AI marker anchor + pricing popover + appearance sync)
 - Exact trigger locations are now captured at the moment `???` or `?`+`Tab` fires:
   - this removes the loose fallback path that could insert the AI marker at the document start,
@@ -386,8 +374,6 @@
   - the embedded attributed text view also updates its appearance.
 - Reduced editor churn by no longer bouncing local `currentRTF` state on every rich-text change from typing.
 - Added a forced editor appearance/color normalization pass on reload/theme changes to reduce text invisibility/flicker caused by stale foreground colors.
-- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, popup-only AI answers + tab-state repair)
 - Removed inline AI marker insertion from the live response flow:
   - AI answers now open only in the popover and no new inline `i` attachment is inserted into the note text.
@@ -395,8 +381,6 @@
 - Reworked `ContentView` editor ownership to bind `NoteEditorView` directly to the currently selected note instead of mirroring note text/RTF through local `@State`.
   - this avoids stale note content/RTF being replayed into the editor during tab switches.
 - Added `.id(selectedNoteID)` on `NoteEditorView` so AppKit editor state is rebuilt cleanly when switching tabs.
-- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, persistent streaming AI panel + adjacent tab hotkeys)
 - Added real-time AI response streaming for inline-question answers:
   - `AIService.answerQuestionSentence(...)` now streams partial output for both Ollama (`/api/chat`, NDJSON) and OpenAI-compatible chat endpoints (`stream: true`, SSE/line parsing),
@@ -411,8 +395,6 @@
   - `Cmd+Option+Shift+Right` selects the tab to the right,
   - existing `Cmd+Option+Left/Right` tab-reordering hotkeys were kept intact.
 - Important implementation detail: the old inline-marker code paths still exist for legacy payload decoding/cleanup, but new live AI answers use only the shared panel controller.
-- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, popover titlebar transparency + Cmd+Space tab close hardening)
 - Created a pre-change checkpoint commit before this pass: `3007c75` (`checkpoint: persistent streaming AI panel and tab hotkeys`).
 - Hardened `Cmd+Space` tab closing in two places:
@@ -422,28 +404,20 @@
   - titlebar is now transparent / separatorless,
   - panel window background is clear + non-opaque,
   - content is pushed down with a transparent top clearance so the close button sits over clear space instead of over the content card.
-- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, borderless AI panel + inline close control)
 - AI response panel no longer uses a native titlebar or standard red close button.
 - Panel window is now borderless/resizable, and the close action is a low-profile inline `xmark` button in the top-left of the popover header, positioned left of the summary chip.
 - Removed the old titlebar spacer logic from the popover sizing/layout and rebalanced chrome height for the borderless presentation.
-- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, close-tab behavior revert + draggable AI header polish)
 - Reverted the extra `Cmd+Space` tab-close interception back to the original app/editor handling so the user's restored global shortcut setup is no longer overridden by new matching logic.
 - Fixed post-close tab selection to choose the immediate visual left neighbor of the closed tab instead of jumping to the first tab.
 - Made the borderless AI response panel header draggable by using a dedicated drag region across the full top strip.
 - Improved the custom close button with a larger hit target, hover feedback, and a subtle scale/background animation.
-- Added a monochrome animated gradient treatment for the `Thinking...` state before streamed response text arrives.
-- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-- Manual runtime check still recommended: close a middle tab and confirm selection moves to the immediate left tab, then drag the AI panel from its header and verify the custom close button feels reliable.
+- Added a monochrome animated gradient treatment for the `Thinking...` state before streamed response text arrives.- Manual runtime check still recommended: close a middle tab and confirm selection moves to the immediate left tab, then drag the AI panel from its header and verify the custom close button feels reliable.
 
 ## Completed in this pass (2026-03-06, compact AI header alignment fix)
 - Reduced the animated `Thinking...` label back down to a smaller size (`12pt`) so it no longer overpowers the panel while streaming.
 - Fixed the borderless AI panel top-strip layout so the header remains a fixed-height bar and the full panel content stays pinned to the top-left when the window is manually resized larger.
-- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, editable AI prompt chip + replay)
 - Narrowed the AI panel footer interaction strip so the copy control now occupies roughly 70% of the panel width instead of spanning the full footer row.
 - Replaced the static summary chip with live per-answer prompt controls in the AI panel header:
@@ -452,20 +426,14 @@
   - added a replay button to regenerate the answer using the updated local prompt selections.
 - Added an `AIService.InlineAnswerOptions` snapshot so panel replay regenerates from the original paragraph context without mutating the global footnote settings.
 - Kept compatibility with the old legacy inline-answer payload presenter path so historical saved payloads still open.
-- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, AI panel placeholders + follow-up field)
 - The AI response panel header now always shows all prompt groups as selectable controls: length, mode, expert, and voice. Unselected groups render as placeholders (`Mode`, `Expert`, `Voice`) so they can be chosen directly from the top bar before replay.
 - Added a compact pill-style follow-up text field to the center of the AI panel footer while keeping the copy action at the right edge of the reduced-width footer strip.
 - Added per-answer follow-up request handling in the shared AI panel controller, including replay of follow-up answers with the correct preserved context and restoring the previous answer if a replay/follow-up is cancelled or fails.
-- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, AI panel min-width + footer cleanup)
 - Raised the AI response panel minimum width to `366pt` across its seeded content size, preferred sizing logic, window min size, and SwiftUI frame so the initial open state no longer clips the right edge / rounded corner.
 - Removed the footer copy button entirely.
 - Shifted the follow-up field lower by reducing the panel's bottom padding, kept it centered in the reduced-width footer strip, and made the `Follow up` placeholder more subtle with lower-opacity prompt styling.
-- Build verification: `xcodebuild -project 'Tab Note.xcodeproj' -scheme 'Tab Note' -configuration Debug -sdk macosx build` -> `BUILD SUCCEEDED`.
-
 ## Completed in this pass (2026-03-06, web architecture diagram)
 - The requested `visualizer explainer plugin` was not available in this session, so a direct fallback was created instead.
 - Added a standalone clickable web architecture diagram for the app at `docs/tab-note-architecture-diagram.html`.
@@ -479,3 +447,37 @@
   - single-select mode/expert/voice caps,
   - developer/system-prompt routing profile.
 - Paired that with the Octopus multi-surface web-overlay archetype so future apps can reuse one shared 4-dimension system instead of re-deriving enums/prompts/UI rules from scratch.
+
+## Completed in this pass (2026-03-06, AI popup font + hotkey + thinking duration)
+- Synced the inline AI popup body typography with the main editor font choice while keeping code blocks and inline code on a fixed monospaced treatment.
+- Made the app’s global show/hide hotkey temporarily hide and restore the inline AI popup together with the main panel instead of leaving the popup stranded onscreen.
+- Replaced the transient thinking-only treatment with elapsed timing: the popup now shows live `Thinking... Ns` updates while running and preserves a static `Thought for Ns` label after completion.
+
+## Completed in this pass (2026-03-07, inline AI popup replication skill package)
+- Added a dedicated shared skill package at:
+  `/Users/kientran/Desktop/KiensApps/skills/inline-ai-response-panel`
+- The skill captures the exact working Tab Note popup stack:
+  - shared panel controller + model architecture,
+  - manual markdown-to-attributed-text renderer,
+  - top prompt capsule header + replay behavior,
+  - top-right metrics + pricing popover,
+  - bottom follow-up pill,
+  - borderless adaptive panel chrome and drag behavior.
+- It also documents the important drift warning that Tab Note has its own extra `E (example)` response mode on top of the Octopus-style prompt dimensions.
+
+## Completed in this pass (2026-03-07, Codex GUI install + skill-creator safeguard)
+- Installed the popup replication skill into Codex-visible locations:
+  - `~/.codex/skills/inline-ai-response-panel`
+  - `~/.agents/skills/inline-ai-response-panel`
+- Updated `~/.codex/skills/.system/skill-creator` so future skill work explicitly includes:
+  - syncing finished skills into `$CODEX_HOME/skills` for Codex GUI visibility,
+  - a dedicated installer script: `scripts/install_skill_to_codex.py`,
+  - a warning that `default_prompt` values containing `$skill-name` must be shell-quoted correctly so `$` is not expanded away before `openai.yaml` generation.
+
+## Completed in this pass (2026-03-07, generate-web-diagram skill)
+- Created a reusable Codex-visible skill at `~/.codex/skills/generate-web-diagram`.
+- The skill packages the exact browser-openable architecture-diagram workflow used for Tab Note:
+  - inspect app shell, state, UI surfaces, and integrations first,
+  - generate one standalone HTML file with inline CSS/JS,
+  - prefer an interactive board plus inspector over ASCII or prose-only output.
+- Added proper Codex UI metadata in `agents/openai.yaml` and a reusable starter asset at `assets/interactive-architecture-template.html`.

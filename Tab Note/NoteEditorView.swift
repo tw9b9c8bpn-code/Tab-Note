@@ -1209,18 +1209,20 @@ private final class InlineAnswerPanelModel: ObservableObject {
     @Published var aiMode: AIMode = .local
     @Published var contentSize: NSSize = NSSize(width: 366, height: 120)
     @Published var isStreaming = false
-    @Published var responseLengthPreset: AIResponseLengthPreset = .l {
+    @Published var responseLengthID: String = PromptInjectionConfigurationStore.shared.configuration.defaultSelection.responseLengthID {
         didSet { refreshSummaryChip() }
     }
-    @Published var responseModePreset: AIResponseModePreset = .none {
+    @Published var responseModeID: String? = nil {
         didSet { refreshSummaryChip() }
     }
-    @Published var expertDisciplinePreset: AIExpertDisciplinePreset = .none {
+    @Published var expertModeID: String? = nil {
         didSet { refreshSummaryChip() }
     }
-    @Published var voiceFigurePreset: AIVoiceFigurePreset = .none {
+    @Published var voiceModeID: String? = nil {
         didSet { refreshSummaryChip() }
     }
+    @Published var elapsedThinkingSeconds = 0
+    @Published var lastThoughtDurationSeconds: Int?
 
     var requestSentence: String = ""
     var requestWindowID: String = NotesStore.mainWindowID
@@ -1239,16 +1241,50 @@ private final class InlineAnswerPanelModel: ObservableObject {
         !requestSentence.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    var thoughtStatusText: String? {
+        if isStreaming {
+            return "Thinking... \(elapsedThinkingSeconds)s"
+        }
+        if let lastThoughtDurationSeconds {
+            return "Thought for \(lastThoughtDurationSeconds)s"
+        }
+        return nil
+    }
+
+    var showsThoughtStatus: Bool {
+        thoughtStatusText != nil
+    }
+
+    private var thinkingStartedAt: Date?
+    private var thinkingTimer: AnyCancellable?
+
+    var promptSelection: PromptInjectionSelection {
+        get {
+            PromptInjectionConfigurationStore.shared.configuration.normalized(
+                PromptInjectionSelection(
+                    responseLengthID: responseLengthID,
+                    responseModeIDs: Set(responseModeID.map { [$0] } ?? []),
+                    expertModeIDs: Set(expertModeID.map { [$0] } ?? []),
+                    voiceModeID: voiceModeID
+                )
+            )
+        }
+        set {
+            let normalized = PromptInjectionConfigurationStore.shared.configuration.normalized(newValue)
+            responseLengthID = normalized.responseLengthID
+            responseModeID = normalized.responseModeIDs.first
+            expertModeID = normalized.expertModeIDs.first
+            voiceModeID = normalized.voiceModeID
+        }
+    }
+
     var currentRequestOptions: AIService.InlineAnswerOptions {
         AIService.InlineAnswerOptions(
             aiMode: aiMode,
             endpoint: endpoint,
             apiKey: apiKey,
             model: model,
-            responseLengthPreset: responseLengthPreset,
-            responseModePreset: responseModePreset,
-            expertDisciplinePreset: expertDisciplinePreset,
-            voiceFigurePreset: voiceFigurePreset
+            promptSelection: promptSelection
         )
     }
 
@@ -1259,10 +1295,7 @@ private final class InlineAnswerPanelModel: ObservableObject {
         apiKey = options.apiKey
         aiMode = options.aiMode
         model = options.model
-        responseLengthPreset = options.responseLengthPreset
-        responseModePreset = options.responseModePreset
-        expertDisciplinePreset = options.expertDisciplinePreset
-        voiceFigurePreset = options.voiceFigurePreset
+        promptSelection = options.promptSelection
         sourceParagraph = sentence
         priorAnswerContext = ""
         followUpQuestion = ""
@@ -1279,24 +1312,19 @@ private final class InlineAnswerPanelModel: ObservableObject {
         apiKey = options.apiKey
         aiMode = options.aiMode
         model = options.model
-        responseLengthPreset = options.responseLengthPreset
-        responseModePreset = options.responseModePreset
-        expertDisciplinePreset = options.expertDisciplinePreset
-        voiceFigurePreset = options.voiceFigurePreset
+        promptSelection = options.promptSelection
         refreshSummaryChip()
     }
 
     func reset() {
+        stopThinkingTimer()
         rawAnswer = ""
         summaryChip = "AI"
         model = ""
         aiMode = .local
         isStreaming = false
         contentSize = NSSize(width: 366, height: 120)
-        responseLengthPreset = .l
-        responseModePreset = .none
-        expertDisciplinePreset = .none
-        voiceFigurePreset = .none
+        promptSelection = PromptInjectionConfigurationStore.shared.configuration.defaultSelection
         requestSentence = ""
         requestWindowID = NotesStore.mainWindowID
         endpoint = ""
@@ -1305,27 +1333,65 @@ private final class InlineAnswerPanelModel: ObservableObject {
         priorAnswerContext = ""
         followUpQuestion = ""
         requestKind = .initial
+        elapsedThinkingSeconds = 0
+        lastThoughtDurationSeconds = nil
+    }
+
+    func beginThinkingTimer() {
+        stopThinkingTimer()
+        thinkingStartedAt = Date()
+        elapsedThinkingSeconds = 0
+        lastThoughtDurationSeconds = nil
+
+        thinkingTimer = Timer.publish(every: 1, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] now in
+                self?.updateThinkingElapsed(now: now)
+            }
+    }
+
+    func completeThinkingTimer() {
+        updateThinkingElapsed(now: Date())
+        lastThoughtDurationSeconds = elapsedThinkingSeconds
+        stopThinkingTimer()
+    }
+
+    func restoreCompletedState(thoughtDurationSeconds: Int?) {
+        stopThinkingTimer()
+        elapsedThinkingSeconds = 0
+        lastThoughtDurationSeconds = thoughtDurationSeconds
+    }
+
+    private func updateThinkingElapsed(now: Date) {
+        guard let thinkingStartedAt else {
+            elapsedThinkingSeconds = 0
+            return
+        }
+        elapsedThinkingSeconds = max(0, Int(now.timeIntervalSince(thinkingStartedAt)))
+    }
+
+    private func stopThinkingTimer() {
+        thinkingTimer?.cancel()
+        thinkingTimer = nil
+        thinkingStartedAt = nil
     }
 
     private func refreshSummaryChip() {
-        summaryChip = SettingsManager.makeAIPromptSummaryChip(
-            length: responseLengthPreset,
-            mode: responseModePreset,
-            expert: expertDisciplinePreset,
-            voice: voiceFigurePreset
-        )
+        summaryChip = SettingsManager.makeAIPromptSummaryChip(selection: promptSelection)
     }
 }
 
-private final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
+final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
     static let shared = InlineAnswerPanelController()
 
-    let model = InlineAnswerPanelModel()
+    private let model = InlineAnswerPanelModel()
     private var panel: ActivatingPanel?
     private var anchorScreenRect: NSRect?
     private var isSuppressed = false
     private var activeRequestID = UUID()
     private var fallbackAnswerBeforeRequest: String?
+    private var fallbackThoughtDurationBeforeRequest: Int?
+    private var isTemporarilyHiddenByApp = false
 
     func startRequest(
         sentence: String,
@@ -1343,10 +1409,18 @@ private final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
             self.anchorScreenRect = anchorScreenRect
         }
         fallbackAnswerBeforeRequest = model.rawAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : model.rawAnswer
+        fallbackThoughtDurationBeforeRequest = model.lastThoughtDurationSeconds
         model.applyRequestContext(sentence: sentence, windowID: requestWindowID, options: options)
         model.rawAnswer = ""
         model.isStreaming = true
-        model.contentSize = InlineCursorAnswerPopoverView.preferredSize(for: "", isStreaming: true)
+        model.beginThinkingTimer()
+        model.contentSize = InlineCursorAnswerPopoverView.preferredSize(
+            for: "",
+            isStreaming: true,
+            fontChoice: SettingsManager.shared.selectedFontEnum,
+            elapsedSeconds: model.elapsedThinkingSeconds,
+            showsThoughtStatus: model.showsThoughtStatus
+        )
 
         let requestID = UUID()
         activeRequestID = requestID
@@ -1407,6 +1481,7 @@ private final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
         guard !isSuppressed else { return }
         model.rawAnswer = answer
         model.isStreaming = false
+        model.completeThinkingTimer()
         refreshPanelLayout(useAnchor: false)
     }
 
@@ -1414,6 +1489,7 @@ private final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
         guard !isSuppressed else { return }
         if model.hasVisibleContent {
             model.isStreaming = false
+            model.completeThinkingTimer()
             refreshPanelLayout(useAnchor: false)
         } else {
             close()
@@ -1434,7 +1510,14 @@ private final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
         model.model = modelName
         model.rawAnswer = answer
         model.isStreaming = false
-        model.contentSize = InlineCursorAnswerPopoverView.preferredSize(for: answer, isStreaming: false)
+        model.restoreCompletedState(thoughtDurationSeconds: nil)
+        model.contentSize = InlineCursorAnswerPopoverView.preferredSize(
+            for: answer,
+            isStreaming: false,
+            fontChoice: SettingsManager.shared.selectedFontEnum,
+            elapsedSeconds: 0,
+            showsThoughtStatus: model.showsThoughtStatus
+        )
         presentPanel(useAnchor: true)
     }
 
@@ -1463,10 +1546,18 @@ private final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
 
         isSuppressed = false
         fallbackAnswerBeforeRequest = previousAnswer
+        fallbackThoughtDurationBeforeRequest = model.lastThoughtDurationSeconds
         model.applyFollowUpContext(question: trimmedQuestion, previousAnswer: previousAnswer, options: options)
         model.rawAnswer = ""
         model.isStreaming = true
-        model.contentSize = InlineCursorAnswerPopoverView.preferredSize(for: "", isStreaming: true)
+        model.beginThinkingTimer()
+        model.contentSize = InlineCursorAnswerPopoverView.preferredSize(
+            for: "",
+            isStreaming: true,
+            fontChoice: SettingsManager.shared.selectedFontEnum,
+            elapsedSeconds: model.elapsedThinkingSeconds,
+            showsThoughtStatus: model.showsThoughtStatus
+        )
 
         let requestID = UUID()
         activeRequestID = requestID
@@ -1540,12 +1631,14 @@ private final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
     func close() {
         isSuppressed = true
         activeRequestID = UUID()
+        isTemporarilyHiddenByApp = false
         panel?.orderOut(nil)
         panel?.close()
         panel = nil
         anchorScreenRect = nil
         model.reset()
         fallbackAnswerBeforeRequest = nil
+        fallbackThoughtDurationBeforeRequest = nil
     }
 
     func syncAppearance(isDarkMode: Bool) {
@@ -1561,9 +1654,35 @@ private final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
         panel = nil
         anchorScreenRect = nil
         isSuppressed = true
+        isTemporarilyHiddenByApp = false
         activeRequestID = UUID()
         model.reset()
         fallbackAnswerBeforeRequest = nil
+        fallbackThoughtDurationBeforeRequest = nil
+    }
+
+    func setTemporarilyHiddenByApp(_ hidden: Bool) {
+        guard let panel else {
+            isTemporarilyHiddenByApp = false
+            return
+        }
+
+        if hidden {
+            guard panel.isVisible else { return }
+            isTemporarilyHiddenByApp = true
+            panel.orderOut(nil)
+            return
+        }
+
+        guard isTemporarilyHiddenByApp else { return }
+        isTemporarilyHiddenByApp = false
+        syncAppearance(isDarkMode: SettingsManager.shared.isDarkMode)
+        refreshPanelLayout(useAnchor: false)
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    func refreshForCurrentStyle() {
+        refreshPanelLayout(useAnchor: false)
     }
 
     private func presentPanel(useAnchor: Bool) {
@@ -1606,7 +1725,10 @@ private final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
 
         let preferredSize = InlineCursorAnswerPopoverView.preferredSize(
             for: model.rawAnswer,
-            isStreaming: model.isStreaming
+            isStreaming: model.isStreaming,
+            fontChoice: SettingsManager.shared.selectedFontEnum,
+            elapsedSeconds: model.elapsedThinkingSeconds,
+            showsThoughtStatus: model.showsThoughtStatus
         )
         model.contentSize = preferredSize
 
@@ -1700,9 +1822,12 @@ private final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
            !previousAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             model.rawAnswer = previousAnswer
             model.isStreaming = false
+            model.restoreCompletedState(thoughtDurationSeconds: fallbackThoughtDurationBeforeRequest)
             fallbackAnswerBeforeRequest = nil
+            fallbackThoughtDurationBeforeRequest = nil
             refreshPanelLayout(useAnchor: false)
         } else {
+            fallbackThoughtDurationBeforeRequest = nil
             finishStreaming()
         }
     }
@@ -1766,8 +1891,19 @@ private struct InlineCursorAnswerPopoverView: View {
         return ResponseMetrics(words: words, tokens: tokens, estimatedCost: estimatedCost)
     }
 
-    static func preferredSize(for raw: String, isStreaming: Bool) -> NSSize {
-        let attributedText = displayedAttributedString(for: raw, isStreaming: isStreaming)
+    static func preferredSize(
+        for raw: String,
+        isStreaming: Bool,
+        fontChoice: FontChoice,
+        elapsedSeconds: Int,
+        showsThoughtStatus: Bool
+    ) -> NSSize {
+        let attributedText = displayedAttributedString(
+            for: raw,
+            isStreaming: isStreaming,
+            fontChoice: fontChoice,
+            elapsedSeconds: elapsedSeconds
+        )
 
         let candidateWidths: [CGFloat]
         switch attributedText.string.count {
@@ -1781,7 +1917,7 @@ private struct InlineCursorAnswerPopoverView: View {
             candidateWidths = [366, 380]
         }
 
-        let chromeHeight: CGFloat = 96
+        let chromeHeight: CGFloat = showsThoughtStatus ? 118 : 96
         let minHeight: CGFloat = 120
         let maxHeight: CGFloat = 600
 
@@ -1810,11 +1946,18 @@ private struct InlineCursorAnswerPopoverView: View {
         return NSSize(width: bestWidth, height: bestHeight)
     }
 
-    static func displayedAttributedString(for raw: String, isStreaming: Bool) -> NSAttributedString {
-        isStreaming ? streamingAttributedString(from: raw) : renderedAttributedString(from: raw)
+    static func displayedAttributedString(
+        for raw: String,
+        isStreaming: Bool,
+        fontChoice: FontChoice,
+        elapsedSeconds: Int
+    ) -> NSAttributedString {
+        isStreaming
+            ? streamingAttributedString(from: raw, fontChoice: fontChoice, elapsedSeconds: elapsedSeconds)
+            : renderedAttributedString(from: raw, fontChoice: fontChoice)
     }
 
-    static func renderedAttributedString(from raw: String) -> NSAttributedString {
+    static func renderedAttributedString(from raw: String, fontChoice: FontChoice) -> NSAttributedString {
         let prepared = preparedAnswerText(from: raw)
         let blocks = prepared
             .components(separatedBy: "\n\n")
@@ -1824,33 +1967,38 @@ private struct InlineCursorAnswerPopoverView: View {
         let output = NSMutableAttributedString()
         for (index, block) in blocks.enumerated() {
             if index > 0 {
-                output.append(NSAttributedString(string: "\n\n", attributes: bodyAttributes()))
+                output.append(NSAttributedString(string: "\n\n", attributes: bodyAttributes(fontChoice: fontChoice)))
             }
-            output.append(renderedBlock(block))
+            output.append(renderedBlock(block, fontChoice: fontChoice))
         }
         return output
     }
 
-    static func streamingAttributedString(from raw: String) -> NSAttributedString {
+    static func streamingAttributedString(
+        from raw: String,
+        fontChoice: FontChoice,
+        elapsedSeconds: Int
+    ) -> NSAttributedString {
         let normalized = raw
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
-        let displayText = normalized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Thinking..." : normalized
-        let color = displayText == "Thinking..." ? NSColor.secondaryLabelColor : NSColor.labelColor
+        let isPlaceholder = normalized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let displayText = isPlaceholder ? "Thinking... \(elapsedSeconds)s" : normalized
+        let color = isPlaceholder ? NSColor.secondaryLabelColor : NSColor.labelColor
         return NSAttributedString(
             string: displayText,
             attributes: [
-                .font: NSFont.systemFont(ofSize: 12),
+                .font: textFont(choice: fontChoice, size: 12),
                 .foregroundColor: color,
                 .paragraphStyle: defaultParagraphStyle()
             ]
         )
     }
 
-    private static func renderedBlock(_ block: String) -> NSAttributedString {
+    private static func renderedBlock(_ block: String, fontChoice: FontChoice) -> NSAttributedString {
         let trimmed = block.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            return NSAttributedString(string: "", attributes: bodyAttributes())
+            return NSAttributedString(string: "", attributes: bodyAttributes(fontChoice: fontChoice))
         }
 
         if trimmed.hasPrefix("```"), trimmed.hasSuffix("```") {
@@ -1861,8 +2009,10 @@ private struct InlineCursorAnswerPopoverView: View {
         if lines.count > 1, lines.allSatisfy({ listMatch(in: $0) != nil }) {
             let output = NSMutableAttributedString()
             for (index, line) in lines.enumerated() {
-                if index > 0 { output.append(NSAttributedString(string: "\n", attributes: bodyAttributes())) }
-                if let renderedLine = renderedListLine(line) {
+                if index > 0 {
+                    output.append(NSAttributedString(string: "\n", attributes: bodyAttributes(fontChoice: fontChoice)))
+                }
+                if let renderedLine = renderedListLine(line, fontChoice: fontChoice) {
                     output.append(renderedLine)
                 }
             }
@@ -1872,20 +2022,22 @@ private struct InlineCursorAnswerPopoverView: View {
         if lines.count > 1, lines.allSatisfy({ quoteContent(in: $0) != nil }) {
             let output = NSMutableAttributedString()
             for (index, line) in lines.enumerated() {
-                if index > 0 { output.append(NSAttributedString(string: "\n", attributes: bodyAttributes())) }
-                output.append(renderedQuoteLine(line))
+                if index > 0 {
+                    output.append(NSAttributedString(string: "\n", attributes: bodyAttributes(fontChoice: fontChoice)))
+                }
+                output.append(renderedQuoteLine(line, fontChoice: fontChoice))
             }
             return output
         }
 
-        if let renderedHeading = renderedHeadingLine(trimmed) {
+        if let renderedHeading = renderedHeadingLine(trimmed, fontChoice: fontChoice) {
             return renderedHeading
         }
 
-        return renderedParagraph(trimmed)
+        return renderedParagraph(trimmed, fontChoice: fontChoice)
     }
 
-    private static func renderedHeadingLine(_ line: String) -> NSAttributedString? {
+    private static func renderedHeadingLine(_ line: String, fontChoice: FontChoice) -> NSAttributedString? {
         let nsLine = line as NSString
         let range = NSRange(location: 0, length: nsLine.length)
         let match = nsLine.range(of: #"^(#{1,3})\s+(.+)$"#, options: .regularExpression, range: range)
@@ -1904,16 +2056,16 @@ private struct InlineCursorAnswerPopoverView: View {
         }
         return inlineAttributedString(
             from: content,
-            baseAttributes: headingAttributes(fontSize: fontSize)
+            baseAttributes: headingAttributes(fontSize: fontSize, fontChoice: fontChoice)
         )
     }
 
-    private static func renderedParagraph(_ text: String) -> NSAttributedString {
+    private static func renderedParagraph(_ text: String, fontChoice: FontChoice) -> NSAttributedString {
         let joined = text
             .components(separatedBy: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .joined(separator: " ")
-        return inlineAttributedString(from: joined, baseAttributes: bodyAttributes())
+        return inlineAttributedString(from: joined, baseAttributes: bodyAttributes(fontChoice: fontChoice))
     }
 
     private static func renderedCodeBlock(_ text: String) -> NSAttributedString {
@@ -1935,24 +2087,24 @@ private struct InlineCursorAnswerPopoverView: View {
         )
     }
 
-    private static func renderedListLine(_ line: String) -> NSAttributedString? {
+    private static func renderedListLine(_ line: String, fontChoice: FontChoice) -> NSAttributedString? {
         guard let match = listMatch(in: line) else { return nil }
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.headIndent = 18
         paragraphStyle.firstLineHeadIndent = 0
         paragraphStyle.lineSpacing = 2
-        let prefixAttributes = bodyAttributes(paragraphStyle: paragraphStyle)
+        let prefixAttributes = bodyAttributes(paragraphStyle: paragraphStyle, fontChoice: fontChoice)
         let prefix = NSAttributedString(string: match.prefix, attributes: prefixAttributes)
         let content = inlineAttributedString(
             from: match.content,
-            baseAttributes: bodyAttributes(paragraphStyle: paragraphStyle)
+            baseAttributes: bodyAttributes(paragraphStyle: paragraphStyle, fontChoice: fontChoice)
         )
         let output = NSMutableAttributedString(attributedString: prefix)
         output.append(content)
         return output
     }
 
-    private static func renderedQuoteLine(_ line: String) -> NSAttributedString {
+    private static func renderedQuoteLine(_ line: String, fontChoice: FontChoice) -> NSAttributedString {
         let content = quoteContent(in: line) ?? line
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.headIndent = 12
@@ -1961,7 +2113,7 @@ private struct InlineCursorAnswerPopoverView: View {
         let output = NSMutableAttributedString(
             string: "▍ ",
             attributes: [
-                .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+                .font: textFont(choice: fontChoice, size: 12, bold: true),
                 .foregroundColor: NSColor.secondaryLabelColor,
                 .paragraphStyle: paragraphStyle
             ]
@@ -1969,7 +2121,9 @@ private struct InlineCursorAnswerPopoverView: View {
         output.append(
             inlineAttributedString(
                 from: content,
-                baseAttributes: italicizedAttributes(from: bodyAttributes(paragraphStyle: paragraphStyle))
+                baseAttributes: italicizedAttributes(
+                    from: bodyAttributes(paragraphStyle: paragraphStyle, fontChoice: fontChoice)
+                )
             )
         )
         return output
@@ -2138,23 +2292,42 @@ private struct InlineCursorAnswerPopoverView: View {
         return nil
     }
 
-    private static func bodyAttributes(paragraphStyle: NSParagraphStyle? = nil) -> [NSAttributedString.Key: Any] {
+    private static func bodyAttributes(
+        paragraphStyle: NSParagraphStyle? = nil,
+        fontChoice: FontChoice
+    ) -> [NSAttributedString.Key: Any] {
         let style = paragraphStyle ?? defaultParagraphStyle()
         return [
-            .font: NSFont.systemFont(ofSize: 12),
+            .font: textFont(choice: fontChoice, size: 12),
             .foregroundColor: NSColor.labelColor,
             .paragraphStyle: style
         ]
     }
 
-    private static func headingAttributes(fontSize: CGFloat) -> [NSAttributedString.Key: Any] {
+    private static func headingAttributes(fontSize: CGFloat, fontChoice: FontChoice) -> [NSAttributedString.Key: Any] {
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.lineSpacing = 2
         return [
-            .font: NSFont.systemFont(ofSize: fontSize, weight: .semibold),
+            .font: textFont(choice: fontChoice, size: fontSize, bold: true),
             .foregroundColor: NSColor.labelColor,
             .paragraphStyle: paragraphStyle
         ]
+    }
+
+    private static func textFont(
+        choice: FontChoice,
+        size: CGFloat,
+        bold: Bool = false
+    ) -> NSFont {
+        switch choice {
+        case .sansSerif:
+            return NSFont.systemFont(ofSize: size, weight: bold ? .semibold : .regular)
+        case .serif:
+            return NSFont(name: bold ? "Georgia-Bold" : "Georgia", size: size)
+                ?? NSFont.systemFont(ofSize: size, weight: bold ? .semibold : .regular)
+        case .monospace:
+            return NSFont.monospacedSystemFont(ofSize: size, weight: bold ? .semibold : .regular)
+        }
     }
 
     private static func codeAttributes(from base: [NSAttributedString.Key: Any]) -> [NSAttributedString.Key: Any] {
@@ -2227,7 +2400,12 @@ private struct InlineCursorAnswerPopoverView: View {
     }
 
     private var displayAttributedAnswer: NSAttributedString {
-        Self.displayedAttributedString(for: model.rawAnswer, isStreaming: model.isStreaming)
+        Self.displayedAttributedString(
+            for: model.rawAnswer,
+            isStreaming: model.isStreaming,
+            fontChoice: settings.selectedFontEnum,
+            elapsedSeconds: model.elapsedThinkingSeconds
+        )
     }
 
     private var metrics: ResponseMetrics {
@@ -2242,8 +2420,12 @@ private struct InlineCursorAnswerPopoverView: View {
         "\(metrics.words)w • ~\(metrics.tokens)t • \(Self.formattedCost(metrics.estimatedCost))"
     }
 
-    private var showsThinkingAnimation: Bool {
-        model.isStreaming && model.rawAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    private var thoughtStatusText: String? {
+        model.thoughtStatusText
+    }
+
+    private var shouldShowAnswerBody: Bool {
+        !model.rawAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var pricingRows: [(label: String, cost: Double, isActive: Bool)] {
@@ -2309,50 +2491,78 @@ private struct InlineCursorAnswerPopoverView: View {
         settings.isDarkMode ? .white.opacity(0.18) : .black.opacity(0.16)
     }
 
+    private var promptConfig: PromptInjectionConfiguration {
+        PromptInjectionConfigurationStore.shared.configuration
+    }
+
     @ViewBuilder
     private var promptSummaryControls: some View {
         HStack(spacing: 6) {
             HStack(spacing: 4) {
-                promptMenuLabel(model.responseLengthPreset.rawValue) {
-                    ForEach(AIResponseLengthPreset.allCases, id: \.rawValue) { option in
-                        Button(selectionTitle(option.displayName, isSelected: model.responseLengthPreset == option)) {
-                            model.responseLengthPreset = option
+                promptMenuLabel(model.responseLengthID.uppercased()) {
+                    ForEach(promptConfig.responseLengthOptions, id: \.id) { option in
+                        Button(selectionTitle(option.label, isSelected: model.responseLengthID == option.id)) {
+                            model.responseLengthID = option.id
                         }
                     }
                 }
 
                 summaryDivider
                 promptMenuLabel(
-                    model.responseModePreset == .none ? "Mode" : model.responseModePreset.rawValue,
-                    isPlaceholder: model.responseModePreset == .none
+                    model.responseModeID.flatMap { promptConfig.responseModeOption(id: $0)?.shortLabel } ?? "Mode",
+                    isPlaceholder: model.responseModeID == nil
                 ) {
-                    ForEach(AIResponseModePreset.allCases, id: \.rawValue) { option in
-                        Button(selectionTitle(option.menuTitle, isSelected: model.responseModePreset == option)) {
-                            model.responseModePreset = option
+                    Button(selectionTitle("None", isSelected: model.responseModeID == nil)) {
+                        model.responseModeID = nil
+                    }
+                    ForEach(promptConfig.responseModeOptions, id: \.id) { option in
+                        Button(
+                            selectionTitle(
+                                promptConfig.responseModeMenuLabel(for: option.id),
+                                isSelected: model.responseModeID == option.id
+                            )
+                        ) {
+                            model.responseModeID = option.id
                         }
                     }
                 }
 
                 summaryDivider
                 promptMenuLabel(
-                    model.expertDisciplinePreset == .none ? "Expert" : model.expertDisciplinePreset.rawValue,
-                    isPlaceholder: model.expertDisciplinePreset == .none
+                    model.expertModeID.flatMap { promptConfig.expertModeOption(id: $0)?.shortLabel } ?? "Expert",
+                    isPlaceholder: model.expertModeID == nil
                 ) {
-                    ForEach(AIExpertDisciplinePreset.allCases, id: \.rawValue) { option in
-                        Button(selectionTitle(option.menuTitle, isSelected: model.expertDisciplinePreset == option)) {
-                            model.expertDisciplinePreset = option
+                    Button(selectionTitle("None", isSelected: model.expertModeID == nil)) {
+                        model.expertModeID = nil
+                    }
+                    ForEach(promptConfig.expertModeOptions, id: \.id) { option in
+                        Button(
+                            selectionTitle(
+                                promptConfig.expertModeMenuLabel(for: option.id),
+                                isSelected: model.expertModeID == option.id
+                            )
+                        ) {
+                            model.expertModeID = option.id
                         }
                     }
                 }
 
                 summaryDivider
                 promptMenuLabel(
-                    model.voiceFigurePreset == .none ? "Voice" : model.voiceFigurePreset.summaryLabel,
-                    isPlaceholder: model.voiceFigurePreset == .none
+                    model.voiceModeID.map { promptConfig.voiceSummaryLabel(for: $0) } ?? "Voice",
+                    isPlaceholder: model.voiceModeID == nil
                 ) {
-                    ForEach(AIVoiceFigurePreset.allCases, id: \.rawValue) { option in
-                        Button(selectionTitle(option.menuTitle, isSelected: model.voiceFigurePreset == option)) {
-                            model.voiceFigurePreset = option
+                    Button(selectionTitle("None", isSelected: model.voiceModeID == nil)) {
+                        model.voiceModeID = nil
+                    }
+                    ForEach(promptConfig.voiceModeOptions, id: \.id) { option in
+                        Button(
+                            selectionTitle(
+                                promptConfig.voiceModeMenuLabel(for: option.id),
+                                isSelected: model.voiceModeID == option.id
+                            )
+                        ) {
+                            model.voiceModeID = option.id
                         }
                     }
                 }
@@ -2453,6 +2663,18 @@ private struct InlineCursorAnswerPopoverView: View {
         .frame(height: 24)
     }
 
+    @ViewBuilder
+    private var thoughtStatusView: some View {
+        if let thoughtStatusText {
+            ThoughtStatusText(
+                text: thoughtStatusText,
+                isAnimating: model.isStreaming,
+                isDarkMode: settings.isDarkMode
+            )
+            .padding(.top, 2)
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ZStack {
@@ -2506,14 +2728,16 @@ private struct InlineCursorAnswerPopoverView: View {
             }
             .frame(maxWidth: .infinity, minHeight: 24, maxHeight: 24)
 
+            thoughtStatusView
+
             Group {
-                if showsThinkingAnimation {
-                    ThinkingGradientText(isDarkMode: settings.isDarkMode)
-                } else {
+                if shouldShowAnswerBody {
                     SelectableAttributedTextView(
                         attributedText: displayAttributedAnswer,
                         isDarkMode: settings.isDarkMode
                     )
+                } else {
+                    Color.clear
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -2541,6 +2765,9 @@ private struct InlineCursorAnswerPopoverView: View {
             maxHeight: .infinity,
             alignment: .topLeading
         )
+        .onChange(of: settings.selectedFontEnum) { _, _ in
+            InlineAnswerPanelController.shared.refreshForCurrentStyle()
+        }
     }
 }
 
@@ -2606,7 +2833,9 @@ private struct WindowDragRegion: NSViewRepresentable {
     }
 }
 
-private struct ThinkingGradientText: View {
+private struct ThoughtStatusText: View {
+    let text: String
+    let isAnimating: Bool
     let isDarkMode: Bool
     @State private var gradientOffset: CGFloat = -140
     private let fontSize: CGFloat = 12
@@ -2620,30 +2849,45 @@ private struct ThinkingGradientText: View {
     }
 
     var body: some View {
-        Text("Thinking...")
+        Text(text)
             .font(.system(size: fontSize, weight: .semibold))
-            .foregroundStyle(baseColor)
+            .foregroundStyle(isAnimating ? baseColor : brightColor.opacity(0.78))
             .overlay {
-                LinearGradient(
-                    colors: [baseColor, brightColor, baseColor],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                .frame(width: 180)
-                .offset(x: gradientOffset)
-                .mask(
-                    Text("Thinking...")
-                        .font(.system(size: fontSize, weight: .semibold))
-                )
-            }
-            .padding(.top, 4)
-            .onAppear {
-                gradientOffset = -140
-                withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
-                    gradientOffset = 140
+                if isAnimating {
+                    LinearGradient(
+                        colors: [baseColor, brightColor, baseColor],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: max(180, CGFloat(text.count) * 7.5))
+                    .offset(x: gradientOffset)
+                    .mask(
+                        Text(text)
+                            .font(.system(size: fontSize, weight: .semibold))
+                    )
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .onAppear {
+                restartAnimationIfNeeded()
+            }
+            .onChange(of: isAnimating) { _, _ in
+                restartAnimationIfNeeded()
+            }
+            .onChange(of: text) { _, _ in
+                restartAnimationIfNeeded()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func restartAnimationIfNeeded() {
+        guard isAnimating else {
+            gradientOffset = -140
+            return
+        }
+        gradientOffset = -140
+        withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
+            gradientOffset = 140
+        }
     }
 }
 

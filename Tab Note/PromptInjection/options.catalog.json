@@ -1,0 +1,217 @@
+{
+  "version": "1.1",
+  "source": "Octopus.AI + Tab Note shared manifest",
+  "composition_order": [
+    "response_length",
+    "response_mode",
+    "expert_mode",
+    "voice_mode"
+  ],
+  "dimensions": {
+    "response_length": {
+      "label": "Response Length",
+      "selection": "single_required",
+      "items": [
+        {
+          "id": "xs",
+          "label": "XS",
+          "helper": "Extra Short (~20 words)",
+          "max_tokens": 80,
+          "prompt": "[IMPORTANT: Keep your response under 20 words. Be extremely brief.]"
+        },
+        {
+          "id": "s",
+          "label": "S",
+          "helper": "Short (~100 words)",
+          "max_tokens": 220,
+          "prompt": "[IMPORTANT: Keep your response under 100 words. Be concise.]"
+        },
+        {
+          "id": "m",
+          "label": "M",
+          "helper": "Medium (~300 words)",
+          "max_tokens": 520,
+          "prompt": "[IMPORTANT: Keep your response under 300 words. Be moderately detailed.]"
+        },
+        {
+          "id": "l",
+          "label": "L",
+          "helper": "Long (default)",
+          "max_tokens": 900,
+          "prompt": ""
+        },
+        {
+          "id": "xl",
+          "label": "XL",
+          "helper": "Extra Long (maximum)",
+          "max_tokens": 1600,
+          "prompt": "[Provide the most comprehensive and detailed response possible.]"
+        }
+      ]
+    },
+    "response_mode": {
+      "label": "Response Mode",
+      "selection": "multi_optional",
+      "items": [
+        {
+          "id": "analogy",
+          "short_label": "A",
+          "label": "Analogy",
+          "icon": "arrow.left.arrow.right",
+          "helper": "Explain through analogies and metaphors.",
+          "prompt": "[Explain using analogies and metaphors to make concepts relatable.]"
+        },
+        {
+          "id": "example",
+          "short_label": "E",
+          "label": "Example",
+          "icon": "list.star",
+          "helper": "Use concrete, common, easy-to-grasp examples.",
+          "prompt": "[Explain using lots of different concrete,most common, easy to understand examples make concepts relatable.]"
+        },
+        {
+          "id": "socratic",
+          "short_label": "S",
+          "label": "Socratic",
+          "icon": "questionmark.circle.fill",
+          "helper": "Answer through guiding questions.",
+          "prompt": "[Answer only with thought-provoking questions to guide understanding.]"
+        },
+        {
+          "id": "dialog",
+          "short_label": "D",
+          "label": "Dialog",
+          "icon": "bubble.left.and.bubble.right.fill",
+          "helper": "Present the answer as a dialog.",
+          "prompt": "[Present the explanation as a dialog between characters.]"
+        },
+        {
+          "id": "inversion",
+          "short_label": "I",
+          "label": "Inversion",
+          "icon": "arrow.uturn.backward",
+          "helper": "Explain what not to do.",
+          "prompt": "[Explain by describing what NOT to do and common mistakes to avoid.]"
+        },
+        {
+          "id": "manifesto",
+          "short_label": "M",
+          "label": "Manifesto",
+          "icon": "megaphone.fill",
+          "helper": "Use high-conviction language.",
+          "prompt": "[Explain with the passion and conviction of a manifesto.]"
+        },
+        {
+          "id": "rant",
+          "short_label": "R",
+          "label": "Rant",
+          "icon": "flame.fill",
+          "helper": "Use an entertaining rant style.",
+          "prompt": "[Give an entertaining rant-style explanation with strong opinions.]"
+        },
+        {
+          "id": "interactive_simulation",
+          "short_label": "IS",
+          "label": "Interactive Simulation",
+          "icon": "play.circle.fill",
+          "helper": "Return a standalone HTML simulation.",
+          "prompt": "[Create an interactive HTML simulation to demonstrate the concept. Include complete HTML/CSS/JS code that can run standalone.]"
+        },
+        {
+          "id": "table_of_contents",
+          "short_label": "T",
+          "label": "Table of Contents",
+          "icon": "list.bullet.rectangle",
+          "helper": "Answer like a textbook table of contents.",
+          "prompt": "[Explain as table of content of a Textbook]"
+        },
+        {
+          "id": "pareto",
+          "short_label": "80",
+          "label": "80/20 Rule",
+          "icon": "chart.pie.fill",
+          "helper": "Focus on the critical few drivers.",
+          "prompt": "[Apply the 80/20 Pareto Principle: identify the critical 20% of inputs, causes, or actions that drive 80% of the results. Cut through the noise and ruthlessly focus on what actually moves the needle.]"
+        },
+        {
+          "id": "second_order",
+          "short_label": "2O",
+          "label": "2nd Order Thinking",
+          "icon": "arrow.forward.circle.fill",
+          "helper": "Follow downstream consequences.",
+          "prompt": "[Use second-order thinking: go beyond the immediate first consequence. For every effect, ask 'and then what?' Reveal the downstream chain reactions, unintended outcomes, and long-term implications that most people miss.]"
+        },
+        {
+          "id": "tier_list",
+          "short_label": "TL",
+          "label": "Tier List",
+          "icon": "trophy.fill",
+          "helper": "Rank options decisively.",
+          "prompt": "[Rank and categorize everything into a tier list using S (exceptional/elite), A (excellent), B (good), C (average), D (below average), and F (failing/avoid). Be decisive, opinionated, and justify each placement clearly.]"
+        },
+        {
+          "id": "first_principles",
+          "short_label": "FP",
+          "label": "First Principles",
+          "icon": "puzzlepiece.fill",
+          "helper": "Strip to fundamentals and reason upward.",
+          "prompt": "[Use first-principles thinking: strip away all assumptions, conventions, and analogies. Decompose the problem down to its most fundamental, irreducible truths. Then reason upward from those foundations to construct a fresh, clear answer from the ground up.]"
+        }
+      ]
+    },
+    "expert_mode": {
+      "label": "Expert Mode",
+      "selection": "multi_optional",
+      "items": [
+        { "id": "physics", "short_label": "Phy", "label": "Physics", "expert_title": "Physicist", "role_name": "a Physicist", "icon": "atom" },
+        { "id": "biology", "short_label": "Bio", "label": "Biology", "expert_title": "Biologist", "role_name": "a Biologist", "icon": "leaf.fill" },
+        { "id": "evolutionary_biology", "short_label": "EvoBio", "label": "Evolutionary Biology", "expert_title": "Evolutionary Biologist", "role_name": "an Evolutionary Biologist", "icon": "hare.fill" },
+        { "id": "ecology", "short_label": "Eco", "label": "Ecology", "expert_title": "Ecologist", "role_name": "an Ecologist", "icon": "tree.fill" },
+        { "id": "systems", "short_label": "Sys", "label": "Systems Theory", "expert_title": "Systems Theorist", "role_name": "a Systems Theorist", "icon": "arrow.triangle.2.circlepath" },
+        { "id": "game_theory", "short_label": "Gam", "label": "Game Theory", "expert_title": "Game Theorist", "role_name": "a Game Theorist", "icon": "dice.fill" },
+        { "id": "economics", "short_label": "Ecn", "label": "Economics", "expert_title": "Economist", "role_name": "an Economist", "icon": "chart.line.uptrend.xyaxis" },
+        { "id": "psychology", "short_label": "Psy", "label": "Psychology", "expert_title": "Psychologist", "role_name": "a Psychologist", "icon": "brain.head.profile" },
+        { "id": "philosophy", "short_label": "Phi", "label": "Philosophy", "expert_title": "Philosopher", "role_name": "a Philosopher", "icon": "lightbulb.fill" },
+        { "id": "linguistics", "short_label": "Lng", "label": "Linguistics", "expert_title": "Linguist", "role_name": "a Linguist", "icon": "text.bubble.fill" },
+        { "id": "arts", "short_label": "Art", "label": "Arts", "expert_title": "Art Critic", "role_name": "an Artist", "icon": "paintpalette.fill" },
+        { "id": "engineering", "short_label": "Eng", "label": "Engineering", "expert_title": "Engineer", "role_name": "an Engineer", "icon": "wrench.and.screwdriver.fill" },
+        { "id": "chemistry", "short_label": "Chm", "label": "Chemistry", "expert_title": "Chemist", "role_name": "a Chemist", "icon": "flask.fill" },
+        { "id": "technology", "short_label": "Tec", "label": "Technology", "expert_title": "Technologist", "role_name": "a Technologist", "icon": "cpu.fill" },
+        { "id": "electrician", "short_label": "Elc", "label": "Electrical", "expert_title": "Electrician", "role_name": "an Electrician", "icon": "bolt.fill" },
+        { "id": "accountant", "short_label": "Acc", "label": "Accounting", "expert_title": "Accountant", "role_name": "an Accountant", "icon": "dollarsign.circle.fill" },
+        { "id": "chef", "short_label": "Che", "label": "Culinary", "expert_title": "Chef", "role_name": "a Chef", "icon": "fork.knife" },
+        { "id": "nutritionist", "short_label": "Nut", "label": "Nutrition", "expert_title": "Nutritionist", "role_name": "a Nutritionist", "icon": "carrot.fill" },
+        { "id": "doctor", "short_label": "Doc", "label": "Medicine", "expert_title": "Doctor", "role_name": "a Doctor", "icon": "stethoscope" },
+        { "id": "designer", "short_label": "Des", "label": "Design", "expert_title": "Designer", "role_name": "a Designer", "icon": "pencil.and.ruler.fill" },
+        { "id": "feng_shui", "short_label": "Fen", "label": "Feng Shui", "expert_title": "Feng Shui Expert", "role_name": "a Feng Shui Expert", "icon": "wind" },
+        { "id": "architect", "short_label": "Arc", "label": "Architecture", "expert_title": "Architect", "role_name": "an Architect", "icon": "building.columns.fill" }
+      ]
+    },
+    "voice_mode": {
+      "label": "Voice Mode",
+      "selection": "single_optional",
+      "items": [
+        { "id": "ayn_rand", "label": "Ayn Rand", "portrait_asset": "voice_ayn_rand", "summary_label": "Rand", "prompt": "[Answer in the voice, tone, and philosophical style of Ayn Rand. Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]" },
+        { "id": "lee_kuan_yew", "label": "Lee Kuan Yew", "summary_label": "Yew", "portrait_asset": "voice_lee_kuan_yew", "prompt": "[Answer in the voice, tone, and philosophical style of Lee Kuan Yew. Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]" },
+        { "id": "eckhart_tolle", "label": "Eckhart Tolle", "summary_label": "Tolle", "portrait_asset": "voice_eckhart_tolle", "prompt": "[Answer in the voice, tone, and philosophical style of Eckhart Tolle. Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]" },
+        { "id": "jiddu_krishnamurti", "label": "Jiddu Krishnamurti", "summary_label": "Krishnamurti", "portrait_asset": "voice_jiddu_krishnamurti", "prompt": "[Answer in the voice, tone, and philosophical style of Jiddu Krishnamurti. Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]" },
+        { "id": "aristotle", "label": "Aristotle", "summary_label": "Aristotle", "portrait_asset": "voice_aristotle", "prompt": "[Answer in the voice, tone, and philosophical style of Aristotle. Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]" },
+        { "id": "machiavelli", "label": "Machiavelli", "summary_label": "Machiavelli", "portrait_asset": "voice_machiavelli", "prompt": "[Answer in the voice, tone, and philosophical style of Machiavelli. Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]" },
+        { "id": "nietzsche", "label": "Nietzsche", "summary_label": "Nietzsche", "portrait_asset": "voice_nietzsche", "prompt": "[Answer in the voice, tone, and philosophical style of Nietzsche. Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]" },
+        { "id": "erich_fromm", "label": "Erich Fromm", "summary_label": "Fromm", "portrait_asset": "voice_erich_fromm", "prompt": "[Answer in the voice, tone, and philosophical style of Erich Fromm. Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]" },
+        { "id": "michael_greger", "label": "Michael Greger", "summary_label": "Greger", "portrait_asset": "voice_michael_greger", "prompt": "[Answer in the voice, tone, and philosophical style of Michael Greger. Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]" },
+        { "id": "michael_saylor", "label": "Michael Saylor", "summary_label": "Saylor", "portrait_asset": "voice_michael_saylor", "prompt": "[Answer in the voice, tone, and philosophical style of Michael Saylor. Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]" },
+        { "id": "maxwell_maltz", "label": "Maxwell Maltz", "summary_label": "Maltz", "portrait_asset": "voice_maxwell_maltz", "prompt": "[Answer in the voice, tone, and philosophical style of Maxwell Maltz. Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]" },
+        { "id": "byung_chul_han", "label": "Byung-Chul Han", "summary_label": "Han", "portrait_asset": "voice_byung_chul_han", "prompt": "[Answer in the voice, tone, and philosophical style of Byung-Chul Han. Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]" },
+        { "id": "harry_browne", "label": "Harry Browne", "summary_label": "Browne", "portrait_asset": "voice_harry_browne", "prompt": "[Answer in the voice, tone, and philosophical style of Harry Browne. Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]" },
+        { "id": "seth_godin", "label": "Seth Godin", "summary_label": "Godin", "portrait_asset": "voice_seth_godin", "prompt": "[Answer in the voice, tone, and philosophical style of Seth Godin. Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]" },
+        { "id": "nicole_lepera", "label": "Dr. Nicole LePera", "summary_label": "LePera", "portrait_asset": "voice_nicole_lepera", "prompt": "[Answer in the voice, tone, and philosophical style of Dr. Nicole LePera. Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]" },
+        { "id": "richard_koch", "label": "Richard Koch", "summary_label": "Koch", "portrait_asset": "voice_richard_koch", "prompt": "[Answer in the voice, tone, and philosophical style of Richard Koch. Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]" },
+        { "id": "jeff_bezos", "label": "Jeff Bezos", "summary_label": "Bezos", "portrait_asset": "voice_jeff_bezos", "prompt": "[Answer in the voice, tone, and philosophical style of Jeff Bezos. Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]" },
+        { "id": "sun_tzu", "label": "Sun Tzu", "summary_label": "Tzu", "portrait_asset": "voice_sun_tzu", "prompt": "[Answer in the voice, tone, and philosophical style of Sun Tzu. Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]" },
+        { "id": "leonardo_da_vinci", "label": "Leonardo da Vinci", "summary_label": "Vinci", "portrait_asset": "voice_leonardo_da_vinci", "prompt": "[Answer in the voice, tone, and philosophical style of Leonardo da Vinci. Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]" },
+        { "id": "naval_ravikant", "label": "Naval Ravikant", "summary_label": "Ravikant", "portrait_asset": "voice_naval_ravikant", "prompt": "[Answer in the voice, tone, and philosophical style of Naval Ravikant. Adopt their worldview, vocabulary, and rhetorical patterns. Stay in character throughout.]" }
+      ]
+    }
+  }
+}

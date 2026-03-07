@@ -1,0 +1,95 @@
+{
+  "version": "1.1",
+  "defaults": {
+    "response_length": "l",
+    "response_mode": [],
+    "expert_mode": [],
+    "voice_mode": null
+  },
+  "ui_contract": {
+    "dimension_rules": {
+      "response_length": {
+        "selection": "single_required",
+        "max_selected": 1,
+        "launcher_style": "chips",
+        "available_items": ["xs", "s", "m", "l", "xl"]
+      },
+      "response_mode": {
+        "selection": "single_optional",
+        "max_selected": 1,
+        "launcher_style": "menu",
+        "available_items": [
+          "analogy",
+          "example",
+          "socratic",
+          "dialog",
+          "inversion",
+          "manifesto",
+          "rant",
+          "interactive_simulation",
+          "table_of_contents",
+          "pareto",
+          "second_order",
+          "tier_list",
+          "first_principles"
+        ]
+      },
+      "expert_mode": {
+        "selection": "single_optional",
+        "max_selected": 1,
+        "launcher_style": "menu",
+        "available_items": [
+          "physics",
+          "biology",
+          "evolutionary_biology",
+          "ecology",
+          "systems",
+          "game_theory",
+          "economics",
+          "psychology",
+          "philosophy",
+          "linguistics",
+          "arts",
+          "engineering",
+          "chemistry",
+          "technology",
+          "electrician",
+          "accountant",
+          "chef",
+          "nutritionist",
+          "doctor",
+          "designer",
+          "feng_shui",
+          "architect"
+        ]
+      },
+      "voice_mode": {
+        "selection": "single_optional",
+        "max_selected": 1,
+        "launcher_style": "menu",
+        "available_items": [
+          "ayn_rand",
+          "lee_kuan_yew",
+          "eckhart_tolle",
+          "jiddu_krishnamurti",
+          "aristotle",
+          "machiavelli",
+          "nietzsche",
+          "erich_fromm",
+          "michael_greger",
+          "michael_saylor",
+          "maxwell_maltz",
+          "byung_chul_han",
+          "harry_browne",
+          "seth_godin",
+          "nicole_lepera",
+          "richard_koch",
+          "jeff_bezos",
+          "sun_tzu",
+          "leonardo_da_vinci",
+          "naval_ravikant"
+        ]
+      }
+    }
+  }
+}
