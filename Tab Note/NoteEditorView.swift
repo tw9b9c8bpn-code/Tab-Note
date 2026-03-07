@@ -7,6 +7,10 @@ import SwiftUI
 import AppKit
 import Combine
 
+private func formattedThinkingDuration(_ seconds: TimeInterval) -> String {
+    String(format: "%.2f", max(0, seconds))
+}
+
 struct NoteEditorView: NSViewRepresentable {
     @Binding var text: String
     @Binding var searchQuery: String
@@ -1221,8 +1225,8 @@ private final class InlineAnswerPanelModel: ObservableObject {
     @Published var voiceModeID: String? = nil {
         didSet { refreshSummaryChip() }
     }
-    @Published var elapsedThinkingSeconds = 0
-    @Published var lastThoughtDurationSeconds: Int?
+    @Published var elapsedThinkingSeconds: TimeInterval = 0
+    @Published var lastThoughtDurationSeconds: TimeInterval?
 
     var requestSentence: String = ""
     var requestWindowID: String = NotesStore.mainWindowID
@@ -1243,10 +1247,10 @@ private final class InlineAnswerPanelModel: ObservableObject {
 
     var thoughtStatusText: String? {
         if isStreaming {
-            return "Thinking... \(elapsedThinkingSeconds)s"
+            return "Thinking... \(formattedThinkingDuration(elapsedThinkingSeconds))s"
         }
         if let lastThoughtDurationSeconds {
-            return "Thought for \(lastThoughtDurationSeconds)s"
+            return "Thought for \(formattedThinkingDuration(lastThoughtDurationSeconds))s"
         }
         return nil
     }
@@ -1343,7 +1347,7 @@ private final class InlineAnswerPanelModel: ObservableObject {
         elapsedThinkingSeconds = 0
         lastThoughtDurationSeconds = nil
 
-        thinkingTimer = Timer.publish(every: 1, on: .main, in: .common)
+        thinkingTimer = Timer.publish(every: 0.01, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] now in
                 self?.updateThinkingElapsed(now: now)
@@ -1356,7 +1360,7 @@ private final class InlineAnswerPanelModel: ObservableObject {
         stopThinkingTimer()
     }
 
-    func restoreCompletedState(thoughtDurationSeconds: Int?) {
+    func restoreCompletedState(thoughtDurationSeconds: TimeInterval?) {
         stopThinkingTimer()
         elapsedThinkingSeconds = 0
         lastThoughtDurationSeconds = thoughtDurationSeconds
@@ -1367,7 +1371,7 @@ private final class InlineAnswerPanelModel: ObservableObject {
             elapsedThinkingSeconds = 0
             return
         }
-        elapsedThinkingSeconds = max(0, Int(now.timeIntervalSince(thinkingStartedAt)))
+        elapsedThinkingSeconds = max(0, now.timeIntervalSince(thinkingStartedAt))
     }
 
     private func stopThinkingTimer() {
@@ -1390,7 +1394,7 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
     private var isSuppressed = false
     private var activeRequestID = UUID()
     private var fallbackAnswerBeforeRequest: String?
-    private var fallbackThoughtDurationBeforeRequest: Int?
+    private var fallbackThoughtDurationBeforeRequest: TimeInterval?
     private var isTemporarilyHiddenByApp = false
 
     func startRequest(
@@ -1423,8 +1427,9 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
         )
 
         let requestID = UUID()
+        let shouldKeepCurrentPanelPosition = panel?.isVisible == true
         activeRequestID = requestID
-        presentPanel(useAnchor: useAnchor)
+        presentPanel(useAnchor: useAnchor && !shouldKeepCurrentPanelPosition)
         postInlineAIStatus("Reading paragraph...", inFlight: true, windowID: requestWindowID)
 
         AIService.shared.answerQuestionSentence(
@@ -1895,7 +1900,7 @@ private struct InlineCursorAnswerPopoverView: View {
         for raw: String,
         isStreaming: Bool,
         fontChoice: FontChoice,
-        elapsedSeconds: Int,
+        elapsedSeconds: TimeInterval,
         showsThoughtStatus: Bool
     ) -> NSSize {
         let attributedText = displayedAttributedString(
@@ -1950,7 +1955,7 @@ private struct InlineCursorAnswerPopoverView: View {
         for raw: String,
         isStreaming: Bool,
         fontChoice: FontChoice,
-        elapsedSeconds: Int
+        elapsedSeconds: TimeInterval
     ) -> NSAttributedString {
         isStreaming
             ? streamingAttributedString(from: raw, fontChoice: fontChoice, elapsedSeconds: elapsedSeconds)
@@ -1977,13 +1982,13 @@ private struct InlineCursorAnswerPopoverView: View {
     static func streamingAttributedString(
         from raw: String,
         fontChoice: FontChoice,
-        elapsedSeconds: Int
+        elapsedSeconds: TimeInterval
     ) -> NSAttributedString {
         let normalized = raw
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
         let isPlaceholder = normalized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let displayText = isPlaceholder ? "Thinking... \(elapsedSeconds)s" : normalized
+        let displayText = isPlaceholder ? "Thinking... \(formattedThinkingDuration(elapsedSeconds))s" : normalized
         let color = isPlaceholder ? NSColor.secondaryLabelColor : NSColor.labelColor
         return NSAttributedString(
             string: displayText,
@@ -2642,6 +2647,12 @@ private struct InlineCursorAnswerPopoverView: View {
                         Capsule()
                             .stroke(settings.isDarkMode ? Color.white.opacity(0.12) : Color.black.opacity(0.10), lineWidth: 1)
                     )
+                    .shadow(
+                        color: settings.isDarkMode ? Color.black.opacity(0.24) : Color.black.opacity(0.10),
+                        radius: settings.isDarkMode ? 8 : 6,
+                        x: 0,
+                        y: 2
+                    )
             )
             .frame(minWidth: 130, idealWidth: 180, maxWidth: 300)
             .disabled(model.isStreaming || !model.hasReplayContext)
@@ -2750,10 +2761,10 @@ private struct InlineCursorAnswerPopoverView: View {
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(panelBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(panelBorder, lineWidth: 1)
-                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(panelBorder, lineWidth: 1)
         )
         .background(PanelAppearanceSyncView(isDarkMode: settings.isDarkMode))
         .frame(
@@ -2837,7 +2848,8 @@ private struct ThoughtStatusText: View {
     let text: String
     let isAnimating: Bool
     let isDarkMode: Bool
-    @State private var gradientOffset: CGFloat = -140
+    @State private var gradientPhase: CGFloat = -1.2
+    @State private var animatedColors = ThoughtStatusText.makeRandomGradientColors()
     private let fontSize: CGFloat = 12
 
     private var baseColor: Color {
@@ -2849,21 +2861,19 @@ private struct ThoughtStatusText: View {
     }
 
     var body: some View {
-        Text(text)
+        let label = Text(text)
             .font(.system(size: fontSize, weight: .semibold))
+
+        label
             .foregroundStyle(isAnimating ? baseColor : brightColor.opacity(0.78))
             .overlay {
                 if isAnimating {
-                    LinearGradient(
-                        colors: [baseColor, brightColor, baseColor],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                    .frame(width: max(180, CGFloat(text.count) * 7.5))
-                    .offset(x: gradientOffset)
-                    .mask(
-                        Text(text)
-                            .font(.system(size: fontSize, weight: .semibold))
+                    label.foregroundStyle(
+                        LinearGradient(
+                            colors: animatedColors,
+                            startPoint: UnitPoint(x: gradientPhase - 1.1, y: 0.5),
+                            endPoint: UnitPoint(x: gradientPhase + 0.15, y: 0.5)
+                        )
                     )
                 }
             }
@@ -2873,20 +2883,29 @@ private struct ThoughtStatusText: View {
             .onChange(of: isAnimating) { _, _ in
                 restartAnimationIfNeeded()
             }
-            .onChange(of: text) { _, _ in
-                restartAnimationIfNeeded()
-            }
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func restartAnimationIfNeeded() {
         guard isAnimating else {
-            gradientOffset = -140
+            gradientPhase = -1.2
             return
         }
-        gradientOffset = -140
-        withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
-            gradientOffset = 140
+        animatedColors = Self.makeRandomGradientColors()
+        gradientPhase = -1.2
+        withAnimation(.linear(duration: 1.35).repeatForever(autoreverses: false)) {
+            gradientPhase = 1.6
+        }
+    }
+    
+    private static func makeRandomGradientColors() -> [Color] {
+        let hues = (0..<4).map { _ in Double.random(in: 0...1) }
+        return hues.map { hue in
+            Color(
+                hue: hue,
+                saturation: Double.random(in: 0.72...0.95),
+                brightness: Double.random(in: 0.88...1.0)
+            )
         }
     }
 }

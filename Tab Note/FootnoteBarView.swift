@@ -16,7 +16,6 @@ struct FootnoteBarView: View {
     @State private var showInfoPopover = false
     @State private var showSettings = false
     @State private var isAIProcessing = false
-    @State private var showAIPromptPanel = false
     @State private var aiStatusText = ""
     @State private var showResponseModePopover = false
     @State private var showExpertModePopover = false
@@ -25,88 +24,82 @@ struct FootnoteBarView: View {
     private let aiModeControlGlyph: CGFloat = 9
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                HStack(spacing: 4) {
-                    Button(action: toggleAIPromptPanel) {
-                        Group {
-                            if isAIProcessing {
-                                ProgressView()
-                                    .scaleEffect(0.42)
-                                    .frame(width: 12, height: 12)
-                            } else {
-                                Image(systemName: "wand.and.stars")
-                                    .font(.system(size: 13, weight: .medium))
-                            }
+        HStack(spacing: 0) {
+            HStack(spacing: 2) {
+                lengthPresetQuickPicker
+                Spacer().frame(width: 10)
+                responseModeMenu
+                expertModeMenu
+                voiceModeMenu
+                Spacer().frame(width: 10)
+                clearAIPromptButton
+
+                if isAIProcessing || !aiStatusText.isEmpty {
+                    HStack(spacing: 4) {
+                        if isAIProcessing {
+                            ProgressView()
+                                .scaleEffect(0.42)
+                                .frame(width: 12, height: 12)
                         }
-                        .foregroundColor(
-                            settings.isDarkMode
-                            ? .white.opacity(showAIPromptPanel ? 0.88 : 0.45)
-                            : .black.opacity(showAIPromptPanel ? 0.82 : 0.42)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .help("AI prompt matrix (Cmd+Shift+I)")
 
-                    if !aiStatusText.isEmpty {
-                        Text(aiStatusText)
-                            .font(.system(size: 7))
-                            .foregroundColor(settings.isDarkMode ? .white.opacity(0.4) : .black.opacity(0.35))
-                            .lineLimit(1)
-                            .transition(.opacity)
+                        if !aiStatusText.isEmpty {
+                            Text(aiStatusText)
+                                .font(.system(size: 7))
+                                .foregroundColor(settings.isDarkMode ? .white.opacity(0.4) : .black.opacity(0.35))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .frame(maxWidth: 110, alignment: .leading)
+                                .transition(.opacity)
+                        }
                     }
+                    .padding(.leading, 8)
                 }
-                .padding(.leading, 8)
+            }
+            .padding(.leading, 8)
 
-                Spacer()
+            Spacer(minLength: 10)
 
-                HStack(spacing: 6) {
-                    Button(action: { cycleFontForward() }) {
-                        Text(fontLabel)
-                            .font(fontPreviewFont)
-                            .foregroundColor(settings.isDarkMode ? .white.opacity(0.6) : .black.opacity(0.5))
-                            .frame(width: 18)
-                            .padding(.vertical, 1)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Font: \(settings.selectedFontEnum.displayName)")
-
-                    Button(action: { settings.isDarkMode.toggle() }) {
-                        Image(systemName: settings.isDarkMode ? "moon.fill" : "sun.max.fill")
-                            .font(.system(size: 9))
-                            .foregroundColor(settings.isDarkMode ? .yellow.opacity(0.8) : .orange)
-                    }
-                    .buttonStyle(.plain)
-                    .help(settings.isDarkMode ? "Light Mode" : "Dark Mode")
-
-                    Button(action: { showInfoPopover.toggle() }) {
-                        Image(systemName: "info.circle")
-                            .font(.system(size: 9))
-                            .foregroundColor(settings.isDarkMode ? .white.opacity(0.5) : .black.opacity(0.4))
-                    }
-                    .buttonStyle(.plain)
-                    .popover(isPresented: $showInfoPopover, arrowEdge: .top) { QuickGuideView() }
-
-                    Button(action: { showSettings.toggle() }) {
-                        Image(systemName: "gear")
-                            .font(.system(size: 9))
-                            .foregroundColor(settings.isDarkMode ? .white.opacity(0.5) : .black.opacity(0.4))
-                    }
-                    .buttonStyle(.plain)
-                    .sheet(isPresented: $showSettings) {
-                        SettingsView().environmentObject(settings).environmentObject(store)
-                    }
+            HStack(spacing: 6) {
+                Button(action: { cycleFontForward() }) {
+                    Text(fontLabel)
+                        .font(fontPreviewFont)
+                        .foregroundColor(settings.isDarkMode ? .white.opacity(0.6) : .black.opacity(0.5))
+                        .frame(width: 18)
+                        .padding(.vertical, 1)
                 }
-                .padding(.trailing, 8)
-            }
-            .frame(height: 21)
-            .background(Color.clear)
+                .buttonStyle(.plain)
+                .help("Font: \(settings.selectedFontEnum.displayName)")
 
-            if showAIPromptPanel {
-                aiPromptMatrixBar
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                Button(action: { settings.isDarkMode.toggle() }) {
+                    Image(systemName: settings.isDarkMode ? "moon.fill" : "sun.max.fill")
+                        .font(.system(size: 9))
+                        .foregroundColor(settings.isDarkMode ? .yellow.opacity(0.8) : .orange)
+                }
+                .buttonStyle(.plain)
+                .help(settings.isDarkMode ? "Light Mode" : "Dark Mode")
+
+                Button(action: { showInfoPopover.toggle() }) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 9))
+                        .foregroundColor(settings.isDarkMode ? .white.opacity(0.5) : .black.opacity(0.4))
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $showInfoPopover, arrowEdge: .top) { QuickGuideView() }
+
+                Button(action: openSettings) {
+                    Image(systemName: "gear")
+                        .font(.system(size: 9))
+                        .foregroundColor(settings.isDarkMode ? .white.opacity(0.5) : .black.opacity(0.4))
+                }
+                .buttonStyle(.plain)
+                .sheet(isPresented: $showSettings) {
+                    SettingsView().environmentObject(settings).environmentObject(store)
+                }
             }
+            .padding(.trailing, 8)
         }
+        .frame(height: 21)
+        .background(Color.clear)
         .onReceive(NotificationCenter.default.publisher(for: .inlineAIStatusDidChange)) { note in
             if let targetWindowID = note.object as? String, targetWindowID != windowID {
                 return
@@ -130,11 +123,11 @@ struct FootnoteBarView: View {
                 }
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .toggleAIPanel)) { note in
+        .onReceive(NotificationCenter.default.publisher(for: .showFloatingSettings)) { note in
             if let targetWindowID = note.object as? String, targetWindowID != windowID {
                 return
             }
-            toggleAIPromptPanel()
+            openSettings()
         }
     }
 
@@ -164,25 +157,14 @@ struct FootnoteBarView: View {
         }
     }
 
+    private func openSettings() {
+        showSettings = true
+    }
+
     // MARK: - AI
 
     private var promptConfig: PromptInjectionConfiguration {
         settings.promptInjectionConfiguration
-    }
-
-    private var aiPromptMatrixBar: some View {
-        HStack(spacing: 2) {
-            lengthPresetQuickPicker
-            Spacer().frame(width: 10)
-            responseModeMenu
-            expertModeMenu
-            voiceModeMenu
-            Spacer(minLength: 0)
-            clearAIPromptButton
-        }
-        .padding(.horizontal, 4)
-        .frame(height: 21)
-        .background(settings.isDarkMode ? Color.white.opacity(0.04) : Color.black.opacity(0.035))
     }
 
     private var lengthPresetQuickPicker: some View {
@@ -406,11 +388,6 @@ struct FootnoteBarView: View {
         }
     }
 
-    private func toggleAIPromptPanel() {
-        withAnimation(.easeOut(duration: 0.16)) {
-            showAIPromptPanel.toggle()
-        }
-    }
 }
 
 // MARK: - AI Popup View
@@ -514,7 +491,6 @@ struct QuickGuideView: View {
                 shortcutRow("⌘U",          "Highlight text")
                 shortcutRow("⌘F",          "Toggle Search bar")
                 shortcutRow("⌘⇧H",         "Toggle Tab Area (Focus Mode)")
-                shortcutRow("⌘⇧I",         "Toggle AI prompt matrix")
                 shortcutRow("???",         "Answer current paragraph with AI")
                 shortcutRow("? + ⇥",       "Answer current paragraph with AI")
             }

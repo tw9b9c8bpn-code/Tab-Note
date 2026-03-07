@@ -111,7 +111,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         statusItem?.menu = menu
     }
 
-    @objc func showPanel() { positionAndShowPanel(windowID: NotesStore.mainWindowID) }
+    @objc func showPanel() { showAllPanels() }
+    @objc func showFloatingSettings() {
+        if !panelsByWindowID.values.contains(where: { $0.isVisible }) {
+            showAllPanels()
+        }
+
+        let windowID = currentWindowIDForKeyEvents()
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .showFloatingSettings, object: windowID)
+        }
+    }
     @objc func newNote() { notesStore.createNote() }
     @objc func checkUpdates() { AppUpdater.shared.checkForUpdates() }
     @objc func toggleAutoCheckUpdates() {
@@ -205,9 +215,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
             if self.isCommandShiftH(event: event, flags: normalizedFlags) {   // Cmd+Shift+H = toggle tab area visibility
                 NotificationCenter.default.post(name: .toggleTabAreaVisibility, object: windowID); return nil
             }
-            if self.isCommandShiftI(event: event, flags: normalizedFlags) {   // Cmd+Shift+I = toggle AI matrix panel
-                NotificationCenter.default.post(name: .toggleAIPanel, object: windowID); return nil
-            }
 
             if arrowFlags == [.command, .option, .shift] && event.keyCode == 123 {   // Cmd+Opt+Shift+Left
                 self.notesStore.selectAdjacentTab(by: -1, in: windowID)
@@ -239,13 +246,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
             }
             return event
         }
-    }
-
-    private func isCommandShiftI(event: NSEvent, flags: NSEvent.ModifierFlags) -> Bool {
-        guard flags.contains(.command), flags.contains(.shift) else { return false }
-        if flags.contains(.control) || flags.contains(.option) { return false }
-        if event.keyCode == 34 { return true } // Physical "I" key on ANSI layout.
-        return event.charactersIgnoringModifiers?.lowercased() == "i"
     }
 
     private func isCommandShiftH(event: NSEvent, flags: NSEvent.ModifierFlags) -> Bool {
@@ -294,11 +294,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
     }
 
     func togglePanel() {
-        guard let mainPanel = panelsByWindowID[NotesStore.mainWindowID] else {
+        guard panelsByWindowID[NotesStore.mainWindowID] != nil else {
             setupPanel()
             return
         }
-        mainPanel.isVisible ? hidePanel() : positionAndShowPanel(windowID: NotesStore.mainWindowID)
+        panelsByWindowID.values.contains(where: \.isVisible) ? hidePanel() : showAllPanels()
     }
 
     func positionAndShowPanel(windowID: String) {
@@ -335,8 +335,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
     }
 
     func hidePanel() {
-        panelsByWindowID[NotesStore.mainWindowID]?.orderOut(nil)
+        for panel in panelsByWindowID.values {
+            panel.orderOut(nil)
+        }
         InlineAnswerPanelController.shared.setTemporarilyHiddenByApp(true)
+    }
+
+    private func showAllPanels() {
+        let orderedPanels = orderedPanelsForHotkeyReveal()
+        guard !orderedPanels.isEmpty else {
+            setupPanel()
+            return
+        }
+
+        let referenceScreen = revealReferenceScreen()
+        for (index, entry) in orderedPanels.enumerated() {
+            repositionPanelForHotkeyReveal(
+                entry.panel,
+                displayIndex: index,
+                referenceScreen: referenceScreen
+            )
+        }
+
+        for entry in orderedPanels.reversed() {
+            entry.panel.makeKeyAndOrderFront(nil)
+        }
+
+        InlineAnswerPanelController.shared.setTemporarilyHiddenByApp(false)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func handleTabDragEnd(noteId: String, sourceWindowID: String, screenPoint: NSPoint) {
@@ -424,6 +450,56 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         newPanel.contentView?.layer?.masksToBounds = true
         newPanel.delegate = self
         return newPanel
+    }
+
+    private func orderedPanelsForHotkeyReveal() -> [(windowID: String, panel: NSPanel)] {
+        panelsByWindowID
+            .map { ($0.key, $0.value) }
+            .sorted { lhs, rhs in
+                if lhs.0 == NotesStore.mainWindowID { return true }
+                if rhs.0 == NotesStore.mainWindowID { return false }
+                return lhs.0 < rhs.0
+            }
+    }
+
+    private func revealReferenceScreen() -> NSScreen? {
+        let mouse = NSEvent.mouseLocation
+        return NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? NSScreen.main
+    }
+
+    private func repositionPanelForHotkeyReveal(
+        _ panel: NSPanel,
+        displayIndex: Int,
+        referenceScreen: NSScreen?
+    ) {
+        guard let visibleFrame = (referenceScreen ?? panel.screen ?? NSScreen.main)?.visibleFrame else { return }
+
+        let cascade = CGFloat(displayIndex) * 26
+        let panelSize = panel.frame.size
+        let origin: NSPoint
+
+        switch settingsManager.positionModeEnum {
+        case .cursor:
+            let mouse = NSEvent.mouseLocation
+            origin = NSPoint(
+                x: mouse.x - panelSize.width / 2 + cascade,
+                y: mouse.y - panelSize.height / 2 - cascade
+            )
+        case .topRight:
+            origin = NSPoint(
+                x: visibleFrame.maxX - panelSize.width - 20 - cascade,
+                y: visibleFrame.maxY - panelSize.height - 20 - cascade
+            )
+        }
+
+        panel.setFrameOrigin(clampedPanelOrigin(origin, size: panelSize, visibleFrame: visibleFrame))
+    }
+
+    private func clampedPanelOrigin(_ origin: NSPoint, size: NSSize, visibleFrame: NSRect) -> NSPoint {
+        NSPoint(
+            x: max(visibleFrame.minX, min(origin.x, visibleFrame.maxX - size.width)),
+            y: max(visibleFrame.minY, min(origin.y, visibleFrame.maxY - size.height))
+        )
     }
 
     private func currentWindowIDForKeyEvents() -> String {

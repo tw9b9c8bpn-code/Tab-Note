@@ -93,6 +93,10 @@ class SettingsManager: ObservableObject {
         get { defaults.string(forKey: "aiApiKey") ?? "" }
         set { objectWillChange.send(); defaults.set(newValue, forKey: "aiApiKey") }
     }
+    var aiAPIHeaderName: String {
+        get { defaults.string(forKey: "aiAPIHeaderName") ?? "Authorization" }
+        set { objectWillChange.send(); defaults.set(newValue, forKey: "aiAPIHeaderName") }
+    }
     var aiModel: String {
         get { defaults.string(forKey: "aiModel") ?? "" }
         set { objectWillChange.send(); defaults.set(newValue, forKey: "aiModel") }

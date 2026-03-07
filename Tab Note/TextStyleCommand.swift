@@ -29,8 +29,8 @@ enum TextStyleCommand: String, CaseIterable {
 
 extension Notification.Name {
     static let toggleSearchBar = Notification.Name("toggleSearchBar")
-    static let toggleAIPanel = Notification.Name("toggleAIPanel")
     static let toggleTabAreaVisibility = Notification.Name("toggleTabAreaVisibility")
+    static let showFloatingSettings = Notification.Name("showFloatingSettings")
     static let applyTextStyle = Notification.Name("applyTextStyle")
     static let answerQuestionAtCursor = Notification.Name("answerQuestionAtCursor")
     static let inlineAIStatusDidChange = Notification.Name("inlineAIStatusDidChange")

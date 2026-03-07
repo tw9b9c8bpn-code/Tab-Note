@@ -259,6 +259,11 @@ struct SettingsView: View {
 
             if settings.aiModeEnum == .local {
                 VStack(alignment: .leading, spacing: 6) {
+                    Text("Local Model Server")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Use this for Ollama or any local server you control on the Mac.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
                     Text("Local Endpoint")
                         .font(.system(size: 12, weight: .medium))
                     TextField("http://localhost:11434", text: Binding(
@@ -278,6 +283,11 @@ struct SettingsView: View {
                 }
             } else {
                 VStack(alignment: .leading, spacing: 6) {
+                    Text("OpenAI-Compatible API")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Use OpenAI, OpenRouter, MiniMax, or any provider that accepts the OpenAI chat-completions format.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
                     Text("API Key")
                         .font(.system(size: 12, weight: .medium))
                     SecureField("Enter API key", text: Binding(

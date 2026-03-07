@@ -1,5 +1,74 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-07, floating settings only + random thinking gradient)
+- Removed the user-facing standalone settings window path and routed settings activation back to the original floating sheet in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/Tab_NoteApp.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AppDelegate.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/FootnoteBarView.swift`
+- Settings behavior changes:
+  - `Cmd+,` now triggers the existing floating settings sheet on the active Tab Note window
+  - the app-menu Settings command is replaced so it no longer opens a duplicate standalone settings window
+  - the footnote gear path still opens the same floating settings sheet
+- Updated thinking-state visuals in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/NoteEditorView.swift`
+- Thinking-state changes:
+  - completely removed the popup border gradient animation while thinking
+  - the animated gradient on `Thinking... xx.xxs` still covers the full text
+  - the thinking text colors are now randomized per thinking run instead of using a fixed palette
+- Updated AI config labeling in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`
+- AI config changes:
+  - added an explicit local-model header
+  - added an explicit OpenAI-compatible API header + helper text that now calls out MiniMax and similar providers
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had introduced a second settings path by wiring the real `SettingsView` into the standalone macOS Settings scene, but the preferred UX is still the original floating settings sheet; this pass removes the duplicate user-facing route.
+  - I had assumed the popup border animation should stay and just be improved, but the preferred direction is no border animation at all; this pass removes it completely.
+  - I had left the API config too generic, which made providers like MiniMax feel under-labeled; this pass restores a clear provider header and helper context.
+
+## Completed in this pass (2026-03-07, multi-window hotkey + settings scene + popup continuity)
+- Fixed detached-window global hotkey behavior in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AppDelegate.swift`
+- Hotkey/show behavior changes:
+  - the global hotkey now hides or reveals all Tab Note windows together, not just the main window
+  - when revealing with `Window Position = At Cursor Position`, detached windows are also repositioned near the cursor with a small cascade offset instead of being left behind
+  - the status-menu `Show Tab Note` action now uses the same all-window reveal path
+- Fixed popup continuity in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/NoteEditorView.swift`
+- Inline AI popup changes:
+  - if the popup is already open and a new inline answer request starts, the popup keeps its current user-moved position instead of snapping back to the text anchor
+  - the follow-up field now has a subtle shadow for a bit more depth
+  - the animated thinking border now uses a smooth looping angular gradient that follows the rounded rectangle instead of a linear sweep that visibly resets each cycle
+- Fixed real macOS settings window wiring in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/Tab_NoteApp.swift`
+- `Cmd+,` now opens the actual `SettingsView` scene instead of the blank placeholder `EmptyView`.
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had previously only updated the main panel reveal/hide path and left detached windows outside the global hotkey flow; this pass moves the hotkey logic to the full `panelsByWindowID` set.
+  - I had previously treated the animated popup border like a straight edge, which caused a noticeable restart and didn’t respect the rounded frame; this pass switches it to a rounded, continuously rotating angular gradient.
+  - I had left the SwiftUI app `Settings` scene as `EmptyView`, which is why `Cmd+,` opened a blank page; this pass wires the real settings content into that scene.
+
+## Completed in this pass (2026-03-07, unified footnote + thinking motion polish)
+- Merged the main footnote and AI controls into one unified bottom bar in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/FootnoteBarView.swift`
+- Removed the `wand.and.stars` toggle entry point and exposed the AI controls inline at all times:
+  - response length quick picks
+  - response mode icon
+  - expert mode icon
+  - voice mode icon
+  - trash icon after a fixed spacer to the right of voice mode
+- Kept the inline AI status text/spinner in the unified row so active requests still surface progress without a second bar.
+- Removed the obsolete AI matrix keyboard toggle path and quick-guide entry:
+  - `Cmd+Shift+I` is no longer intercepted in `AppDelegate`
+  - Quick Guide no longer advertises a hidden/toggled AI row
+- Reworked inline popup thinking visuals in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/NoteEditorView.swift`
+- Thinking-state changes:
+  - elapsed thinking time now updates in centiseconds and renders as `0.00s`
+  - the animated gradient now sweeps across the full `Thinking...` label, including the trailing dots
+  - while streaming, the popup border gets a colorful animated glow overlay
+- Mistakes / wrong assumptions fixed in this pass:
+  - I initially left the old `Cmd+Shift+I` toggle route alive even though the AI controls are now always visible; that would have left a dead shortcut intercept, so I removed the event handling and guide text.
+  - I introduced a SwiftUI modifier syntax break while swapping the popup chrome over to layered border overlays; I caught it in the compile pass and corrected the overlay closure/parens before finishing.
+
 ## Completed in this pass (2026-03-07, visual architecture explainer)
 - Created a self-contained visual architecture + flow explainer HTML for Tab Note at:
   - `/Users/kientran/.agent/diagrams/tab-note-architecture-flow.html`
@@ -36,6 +105,21 @@
 - Prefers cleaner Swift with prompt rules/options stored in manifest-style data rather than embedded UI logic.
 - Prefers visual, browser-openable architecture explanations with real flow diagrams instead of plain text-only summaries.
 - Wants app flow split clearly into frontend, local app service layer, and external backend/integration systems.
+- Prefers a single unified footnote bar with AI controls always visible instead of a separate AI-specific second row.
+- Dislikes the magic wand toggle gate and extra bottom-bar layer for AI controls.
+- Prefers thinking states to feel fast and alive, including centisecond timing and gradient motion that covers the full `Thinking...` label.
+- Prefers colorful animated processing affordances in the inline AI popup, including a glowing border while the answer is streaming.
+- Prefers the global hotkey to reveal and hide every detached Tab Note window together, not only the main window.
+- Prefers cursor-position reveal behavior to apply consistently across detached windows too.
+- Dislikes popup border animations with visible loop resets or motion that ignores rounded corners.
+- Prefers rerunning inline AI while the popup is open to preserve the popup's current manually placed position.
+- Prefers `Cmd+,` to open the real macOS settings window rather than a placeholder or blank scene.
+- Prefers small depth cues like subtle shadowing in the follow-up field instead of completely flat inputs.
+- Prefers only one settings experience: the original floating settings sheet, not a duplicate standalone settings window.
+- Dislikes duplicated settings entry points that diverge in behavior or presentation.
+- Dislikes any animated border treatment around the AI popup while thinking.
+- Prefers the `Thinking...` text treatment to use full-text animated gradients with randomized colors so each run feels less repetitive.
+- Prefers AI API configuration sections to have explicit provider headers and helper text, including clarity for MiniMax-style setups.
 
 ## Completed in this pass (2026-03-07, speech task handoff checkpoint)
 - Used `speech` skill path and validated environment for TTS generation request.
