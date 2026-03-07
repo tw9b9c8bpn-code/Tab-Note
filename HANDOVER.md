@@ -1,5 +1,18 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-07, visual architecture explainer)
+- Created a self-contained visual architecture + flow explainer HTML for Tab Note at:
+  - `/Users/kientran/.agent/diagrams/tab-note-architecture-flow.html`
+- The page explains:
+  - overall app architecture
+  - inline AI request flow
+  - frontend vs app-local service layer vs external backend systems
+  - key source files to read first
+- Important architectural framing captured in the explainer:
+  - Tab Note does not have its own dedicated remote backend server
+  - most "backend" behavior lives inside the macOS app process (`AppDelegate`, `NotesStore`, `SettingsManager`, `AIService`, `AppUpdater`)
+  - external systems are mainly CloudKit, the configured AI endpoint, and Sparkle appcast/update delivery
+
 ## Completed in this pass (2026-03-07, unified prompt injection manifest)
 - Replaced the hardcoded prompt injection enums/labels with a data-backed configuration layer shared with Octopus.AI.
 - Added bundled manifest assets under:
@@ -21,6 +34,8 @@
 - Prefers one unified, scalable, data-based prompt injection system across apps.
 - Dislikes duplicated hardcoded prompt config living separately in each app.
 - Prefers cleaner Swift with prompt rules/options stored in manifest-style data rather than embedded UI logic.
+- Prefers visual, browser-openable architecture explanations with real flow diagrams instead of plain text-only summaries.
+- Wants app flow split clearly into frontend, local app service layer, and external backend/integration systems.
 
 ## Completed in this pass (2026-03-07, speech task handoff checkpoint)
 - Used `speech` skill path and validated environment for TTS generation request.

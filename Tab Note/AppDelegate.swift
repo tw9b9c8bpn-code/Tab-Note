@@ -328,10 +328,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         }
 
         targetPanel.makeKeyAndOrderFront(nil)
+        if windowID == NotesStore.mainWindowID {
+            InlineAnswerPanelController.shared.setTemporarilyHiddenByApp(false)
+        }
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    func hidePanel() { panelsByWindowID[NotesStore.mainWindowID]?.orderOut(nil) }
+    func hidePanel() {
+        panelsByWindowID[NotesStore.mainWindowID]?.orderOut(nil)
+        InlineAnswerPanelController.shared.setTemporarilyHiddenByApp(true)
+    }
 
     func handleTabDragEnd(noteId: String, sourceWindowID: String, screenPoint: NSPoint) {
         if let targetWindowID = notesStore.windowIDForTabBar(at: screenPoint) {
