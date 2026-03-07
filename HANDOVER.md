@@ -1,5 +1,26 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-07, MiniMax diagnostics fix + live TPS status)
+- Reworked API diagnostics in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`
+- Backend/API changes:
+  - API diagnostics no longer rely on provider `/models` support for API mode
+  - diagnostics now send a tiny real completion request against the active provider protocol so OpenAI-compatible providers like MiniMax can validate even when `/v1/models` returns `404`
+  - OpenAI-compatible response parsing is now shared between diagnostics and normal non-streaming API calls
+  - live MiniMax probing showed `https://api.minimax.io/v1/chat/completions` succeeds with `Authorization: Bearer ...`, while `https://api.minimax.io/v1/models` returns `404`; the old health check was the failure point
+- Updated inline thinking status in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/NoteEditorView.swift`
+- UI changes:
+  - `Thinking... xx.xxs` now shows a smaller non-bold live `tps` value while streaming
+  - once the answer finishes, the status keeps the same line but switches the secondary metric to `avg tps`
+  - the grayscale animated gradient still sweeps across the whole status line, including the new secondary metric
+- Preferences / dislikes reinforced from user feedback:
+  - prefers provider debugging to be based on the actual request path the app uses, not a generic endpoint ping that can fail on provider-specific routes
+  - prefers small live performance cues in the inline AI popup, with the secondary metric visually quieter than the main status text
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had assumed MiniMax was still failing on auth or protocol after DeepSeek started working, but direct probing showed the real bug was our diagnostics path using `/models` on a provider that does not expose it on the OpenAI-compatible base.
+  - I originally treated the thinking label as a single styled string only, but the requested design needs a secondary metric with lighter emphasis while still sharing the same animated treatment.
+
 ## Completed in this pass (2026-03-07, API key misconfiguration guard)
 - Added explicit API-key validation and visibility aids in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`

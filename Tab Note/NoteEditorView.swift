@@ -11,6 +11,25 @@ private func formattedThinkingDuration(_ seconds: TimeInterval) -> String {
     String(format: "%.2f", max(0, seconds))
 }
 
+private func estimatedTokenCount(for text: String) -> Int {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return 0 }
+    let words = trimmed.split(whereSeparator: \.isWhitespace).count
+    let nonWhitespaceChars = trimmed.filter { !$0.isWhitespace }.count
+    let byChars = Int(ceil(Double(nonWhitespaceChars) / 4.0))
+    let byWords = Int(ceil(Double(words) * 1.33))
+    return max(1, max(byChars, byWords))
+}
+
+private func formattedTokensPerSecond(_ value: Double) -> String {
+    String(format: "%.1f", max(0, value))
+}
+
+private struct ThoughtStatusDisplay {
+    let primaryText: String
+    let secondaryText: String?
+}
+
 struct NoteEditorView: NSViewRepresentable {
     @Binding var text: String
     @Binding var searchQuery: String
@@ -1246,18 +1265,30 @@ private final class InlineAnswerPanelModel: ObservableObject {
         !requestSentence.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    var thoughtStatusText: String? {
+    var thoughtStatus: ThoughtStatusDisplay? {
         if isStreaming {
-            return "Thinking... \(formattedThinkingDuration(elapsedThinkingSeconds))s"
+            return ThoughtStatusDisplay(
+                primaryText: "Thinking... \(formattedThinkingDuration(elapsedThinkingSeconds))s",
+                secondaryText: thoughtTokensPerSecondText(
+                    duration: elapsedThinkingSeconds,
+                    label: "live tps"
+                )
+            )
         }
         if let lastThoughtDurationSeconds {
-            return "Thought for \(formattedThinkingDuration(lastThoughtDurationSeconds))s"
+            return ThoughtStatusDisplay(
+                primaryText: "Thought for \(formattedThinkingDuration(lastThoughtDurationSeconds))s",
+                secondaryText: thoughtTokensPerSecondText(
+                    duration: lastThoughtDurationSeconds,
+                    label: "avg tps"
+                )
+            )
         }
         return nil
     }
 
     var showsThoughtStatus: Bool {
-        thoughtStatusText != nil
+        thoughtStatus != nil
     }
 
     private var thinkingStartedAt: Date?
@@ -1387,6 +1418,12 @@ private final class InlineAnswerPanelModel: ObservableObject {
 
     private func refreshSummaryChip() {
         summaryChip = SettingsManager.makeAIPromptSummaryChip(selection: promptSelection)
+    }
+
+    private func thoughtTokensPerSecondText(duration: TimeInterval, label: String) -> String {
+        let tokens = estimatedTokenCount(for: rawAnswer)
+        let rate = duration > 0 ? Double(tokens) / duration : 0
+        return "\(formattedTokensPerSecond(rate)) \(label)"
     }
 }
 
@@ -1890,10 +1927,7 @@ private struct InlineCursorAnswerPopoverView: View {
             return ResponseMetrics(words: 0, tokens: 0, estimatedCost: 0)
         }
         let words = trimmed.split(whereSeparator: \.isWhitespace).count
-        let nonWhitespaceChars = trimmed.filter { !$0.isWhitespace }.count
-        let byChars = Int(ceil(Double(nonWhitespaceChars) / 4.0))
-        let byWords = Int(ceil(Double(words) * 1.33))
-        let tokens = max(1, max(byChars, byWords))
+        let tokens = estimatedTokenCount(for: trimmed)
         let ratePerMillion = estimatedOutputRatePerMillionTokens(for: model)
         let estimatedCost = aiMode == .local
             ? 0
@@ -2430,8 +2464,8 @@ private struct InlineCursorAnswerPopoverView: View {
         "\(metrics.words)w • ~\(metrics.tokens)t • \(Self.formattedCost(metrics.estimatedCost))"
     }
 
-    private var thoughtStatusText: String? {
-        model.thoughtStatusText
+    private var thoughtStatus: ThoughtStatusDisplay? {
+        model.thoughtStatus
     }
 
     private var shouldShowAnswerBody: Bool {
@@ -2681,9 +2715,10 @@ private struct InlineCursorAnswerPopoverView: View {
 
     @ViewBuilder
     private var thoughtStatusView: some View {
-        if let thoughtStatusText {
+        if let thoughtStatus {
             ThoughtStatusText(
-                text: thoughtStatusText,
+                primaryText: thoughtStatus.primaryText,
+                secondaryText: thoughtStatus.secondaryText,
                 isAnimating: model.isStreaming,
                 isDarkMode: settings.isDarkMode
             )
@@ -2850,7 +2885,8 @@ private struct WindowDragRegion: NSViewRepresentable {
 }
 
 private struct ThoughtStatusText: View {
-    let text: String
+    let primaryText: String
+    let secondaryText: String?
     let isAnimating: Bool
     let isDarkMode: Bool
     @State private var gradientPhase: CGFloat = -1.2
@@ -2884,20 +2920,16 @@ private struct ThoughtStatusText: View {
     }
 
     var body: some View {
-        let label = Text(text)
-            .font(.system(size: fontSize, weight: .semibold))
-
-        label
+        statusLabel
             .foregroundStyle(isAnimating ? baseColor : brightColor.opacity(0.78))
             .overlay {
                 if isAnimating {
-                    label.foregroundStyle(
-                        LinearGradient(
-                            colors: animatedColors,
-                            startPoint: UnitPoint(x: gradientPhase - 1.1, y: 0.5),
-                            endPoint: UnitPoint(x: gradientPhase + 0.15, y: 0.5)
-                        )
+                    LinearGradient(
+                        colors: animatedColors,
+                        startPoint: UnitPoint(x: gradientPhase - 1.1, y: 0.5),
+                        endPoint: UnitPoint(x: gradientPhase + 0.15, y: 0.5)
                     )
+                    .mask(statusLabel)
                 }
             }
             .onAppear {
@@ -2907,6 +2939,18 @@ private struct ThoughtStatusText: View {
                 restartAnimationIfNeeded()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var statusLabel: some View {
+        HStack(spacing: 0) {
+            Text(primaryText)
+                .font(.system(size: fontSize, weight: .semibold))
+
+            if let secondaryText, !secondaryText.isEmpty {
+                Text(" \(secondaryText)")
+                    .font(.system(size: fontSize - 0.5, weight: .regular, design: .monospaced))
+            }
+        }
     }
 
     private func restartAnimationIfNeeded() {
