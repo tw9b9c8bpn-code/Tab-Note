@@ -1,5 +1,25 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-07, API header support + shared endpoint/model clarity)
+- Added provider-specific API header support in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsManager.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/NoteEditorView.swift`
+- API provider changes:
+  - API mode now exposes a configurable `API Header` field with `Authorization` as the default
+  - OpenAI-compatible requests and diagnostics now use the configured header name instead of hardcoding `Authorization`
+  - `Authorization` still auto-prefixes `Bearer ` when needed, while custom headers send the raw value for providers like MiniMax
+- Shared field clarity changes:
+  - local and API modes now explicitly say that `Endpoint` and `Model Name` are shared values across both modes
+  - inline AI reruns/follow-ups now keep the configured API header alongside the rest of the request options
+- Preferences / dislikes reinforced from user feedback:
+  - prefers one configurable auth header field for OpenAI-compatible providers that do not always use the default auth setup
+  - prefers endpoint and model settings to stay shared across Local and API modes, but labeled clearly so the behavior is obvious
+- Mistakes / wrong assumptions fixed in this pass:
+  - I initially interpreted the MiniMax issue as a missing section label problem, but the real missing requirement was a configurable request-header name in the API settings and network layer.
+  - I treated the Local and API endpoint/model fields as if they needed separate storage, but the preferred behavior is shared values with clearer explanation rather than duplicated settings.
+
 ## Completed in this pass (2026-03-07, floating settings only + random thinking gradient)
 - Removed the user-facing standalone settings window path and routed settings activation back to the original floating sheet in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/Tab_NoteApp.swift`

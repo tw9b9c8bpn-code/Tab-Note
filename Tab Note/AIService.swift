@@ -23,6 +23,7 @@ class AIService {
         var aiMode: AIMode
         var endpoint: String
         var apiKey: String
+        var apiHeaderName: String
         var model: String
         var promptSelection: PromptInjectionSelection
 
@@ -30,12 +31,14 @@ class AIService {
             aiMode: AIMode,
             endpoint: String,
             apiKey: String,
+            apiHeaderName: String,
             model: String,
             promptSelection: PromptInjectionSelection
         ) {
             self.aiMode = aiMode
             self.endpoint = endpoint
             self.apiKey = apiKey
+            self.apiHeaderName = apiHeaderName
             self.model = model
             self.promptSelection = PromptInjectionConfigurationStore.shared.configuration.normalized(promptSelection)
         }
@@ -45,6 +48,7 @@ class AIService {
                 aiMode: settings.aiModeEnum,
                 endpoint: settings.aiEndpoint,
                 apiKey: settings.aiApiKey,
+                apiHeaderName: settings.aiAPIHeaderName,
                 model: settings.aiModel,
                 promptSelection: settings.aiPromptSelection
             )
@@ -173,6 +177,7 @@ class AIService {
         case .api:
             callOpenAICompatible(endpoint: settings.aiEndpoint,
                                  apiKey: settings.aiApiKey,
+                                 apiHeaderName: settings.aiAPIHeaderName,
                                  model: settings.aiModel.isEmpty ? "gpt-4" : settings.aiModel,
                                  systemPrompt: systemPrompt, userMessage: userMessage,
                                  onStatus: onStatus, completion: completion)
@@ -250,6 +255,7 @@ class AIService {
             callOpenAICompatible(
                 endpoint: options.endpoint,
                 apiKey: options.apiKey,
+                apiHeaderName: options.apiHeaderName,
                 model: options.model.isEmpty ? "gpt-4" : options.model,
                 systemPrompt: systemPrompt,
                 userMessage: userMessage,
@@ -328,6 +334,7 @@ class AIService {
             callOpenAICompatible(
                 endpoint: options.endpoint,
                 apiKey: options.apiKey,
+                apiHeaderName: options.apiHeaderName,
                 model: options.model.isEmpty ? "gpt-4" : options.model,
                 systemPrompt: systemPrompt,
                 userMessage: userMessage,
@@ -377,7 +384,8 @@ class AIService {
             guard let url = URL(string: "\(endpoint)/models") else { completion(.failure(AIError.invalidURL)); return }
             guard !settings.aiApiKey.isEmpty else { completion(.failure(AIError.noAPIKey)); return }
             var req = URLRequest(url: url)
-            req.setValue("Bearer \(settings.aiApiKey)", forHTTPHeaderField: "Authorization")
+            let headerName = normalizedAPIHeaderName(settings.aiAPIHeaderName)
+            req.setValue(apiHeaderValue(for: headerName, apiKey: settings.aiApiKey), forHTTPHeaderField: headerName)
             req.timeoutInterval = 10
             URLSession.shared.dataTask(with: req) { _, response, error in
                 DispatchQueue.main.async {
@@ -447,7 +455,7 @@ class AIService {
 
     // MARK: - OpenAI-compatible
 
-    private func callOpenAICompatible(endpoint: String, apiKey: String, model: String,
+    private func callOpenAICompatible(endpoint: String, apiKey: String, apiHeaderName: String, model: String,
                                       systemPrompt: String, userMessage: String,
                                       temperature: Double = 0.7,
                                       maxTokens: Int = 1024,
@@ -461,7 +469,8 @@ class AIService {
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        let headerName = normalizedAPIHeaderName(apiHeaderName)
+        req.setValue(apiHeaderValue(for: headerName, apiKey: apiKey), forHTTPHeaderField: headerName)
         req.timeoutInterval = 180
         let body: [String: Any] = [
             "model": model,
@@ -502,6 +511,23 @@ class AIService {
         }
         currentTask = task
         task?.resume()
+    }
+
+    private func normalizedAPIHeaderName(_ headerName: String) -> String {
+        let trimmed = headerName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Authorization" : trimmed
+    }
+
+    private func apiHeaderValue(for headerName: String, apiKey: String) -> String {
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard headerName.caseInsensitiveCompare("Authorization") == .orderedSame else {
+            return trimmedKey
+        }
+        let lowercasedValue = trimmedKey.lowercased()
+        if lowercasedValue.hasPrefix("bearer ") || lowercasedValue.hasPrefix("basic ") {
+            return trimmedKey
+        }
+        return "Bearer \(trimmedKey)"
     }
 
     private func streamOllama(

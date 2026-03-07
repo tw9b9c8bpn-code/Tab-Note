@@ -1232,6 +1232,7 @@ private final class InlineAnswerPanelModel: ObservableObject {
     var requestWindowID: String = NotesStore.mainWindowID
     var endpoint: String = ""
     var apiKey: String = ""
+    var apiHeaderName: String = "Authorization"
     var sourceParagraph: String = ""
     var priorAnswerContext: String = ""
     var followUpQuestion: String = ""
@@ -1287,6 +1288,7 @@ private final class InlineAnswerPanelModel: ObservableObject {
             aiMode: aiMode,
             endpoint: endpoint,
             apiKey: apiKey,
+            apiHeaderName: apiHeaderName,
             model: model,
             promptSelection: promptSelection
         )
@@ -1297,6 +1299,7 @@ private final class InlineAnswerPanelModel: ObservableObject {
         requestWindowID = windowID
         endpoint = options.endpoint
         apiKey = options.apiKey
+        apiHeaderName = options.apiHeaderName
         aiMode = options.aiMode
         model = options.model
         promptSelection = options.promptSelection
@@ -1314,6 +1317,7 @@ private final class InlineAnswerPanelModel: ObservableObject {
         requestKind = .followUp
         endpoint = options.endpoint
         apiKey = options.apiKey
+        apiHeaderName = options.apiHeaderName
         aiMode = options.aiMode
         model = options.model
         promptSelection = options.promptSelection
@@ -1333,6 +1337,7 @@ private final class InlineAnswerPanelModel: ObservableObject {
         requestWindowID = NotesStore.mainWindowID
         endpoint = ""
         apiKey = ""
+        apiHeaderName = "Authorization"
         sourceParagraph = ""
         priorAnswerContext = ""
         followUpQuestion = ""

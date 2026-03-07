@@ -280,6 +280,9 @@ struct SettingsView: View {
                     ))
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12))
+                    Text("Endpoint and Model Name are shared with API mode, so edits here carry over when you switch modes.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
                 }
             } else {
                 VStack(alignment: .leading, spacing: 6) {
@@ -293,6 +296,14 @@ struct SettingsView: View {
                     SecureField("Enter API key", text: Binding(
                         get: { settings.aiApiKey },
                         set: { settings.aiApiKey = $0 }
+                    ))
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
+                    Text("API Header")
+                        .font(.system(size: 12, weight: .medium))
+                    TextField("Authorization", text: Binding(
+                        get: { settings.aiAPIHeaderName },
+                        set: { settings.aiAPIHeaderName = $0 }
                     ))
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12))
@@ -312,6 +323,9 @@ struct SettingsView: View {
                     ))
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12))
+                    Text("Endpoint and Model Name are shared with Local mode; only the API key and header stay API-specific.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
                 }
             }
 
