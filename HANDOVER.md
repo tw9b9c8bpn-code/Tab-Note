@@ -8,6 +8,7 @@
 - Runtime shared config path is now:
   - `~/Library/Application Support/KienConfig/PromptInjection/`
 - App bootstraps the shared files into that folder if missing, then reads external files first so both apps can converge on the same catalog/profile model.
+- Important runtime detail: Xcode currently copies these JSON files into top-level app `Resources`, not `Resources/PromptInjection`, so the loader now checks both bundle locations before failing.
 - Canonical dimensions now match the Octopus system:
   - `response_length`
   - `response_mode`

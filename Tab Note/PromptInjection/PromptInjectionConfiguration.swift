@@ -551,6 +551,8 @@ final class PromptInjectionConfigurationStore {
     let configuration: PromptInjectionConfiguration
     let sharedDirectoryURL: URL
 
+    private final class BundleToken {}
+
     private init(profileFileName: String) {
         sharedDirectoryURL = Self.sharedDirectoryURL()
         configuration = Self.loadConfiguration(profileFileName: profileFileName, sharedDirectoryURL: sharedDirectoryURL)
@@ -607,7 +609,31 @@ final class PromptInjectionConfigurationStore {
     private static func bundledURL(for fileName: String) -> URL? {
         let name = (fileName as NSString).deletingPathExtension
         let ext = (fileName as NSString).pathExtension
-        return Bundle.main.url(forResource: name, withExtension: ext, subdirectory: "PromptInjection")
+        let bundles = [Bundle.main, Bundle(for: BundleToken.self)]
+
+        for bundle in bundles {
+            if let nestedURL = bundle.url(forResource: name, withExtension: ext, subdirectory: "PromptInjection") {
+                return nestedURL
+            }
+            if let flatURL = bundle.url(forResource: name, withExtension: ext) {
+                return flatURL
+            }
+            if let resourceURL = bundle.resourceURL {
+                let nestedPath = resourceURL
+                    .appendingPathComponent("PromptInjection", isDirectory: true)
+                    .appendingPathComponent(fileName)
+                if FileManager.default.fileExists(atPath: nestedPath.path) {
+                    return nestedPath
+                }
+
+                let flatPath = resourceURL.appendingPathComponent(fileName)
+                if FileManager.default.fileExists(atPath: flatPath.path) {
+                    return flatPath
+                }
+            }
+        }
+
+        return nil
     }
 
     private static func sharedDirectoryURL() -> URL {
