@@ -246,88 +246,29 @@ struct SettingsView: View {
             Text("AI Assistant")
                 .font(.system(size: 13, weight: .semibold))
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Provider")
+                    .font(.system(size: 12, weight: .medium))
+                Text("Choose one runtime. Only the selected provider's fields are used for AI requests.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+
             Picker("Mode", selection: Binding(
                 get: { settings.aiMode },
-                set: { settings.aiMode = $0 }
+                set: {
+                    settings.aiMode = $0
+                    resetAIDiagnostics()
+                }
             )) {
                 ForEach(AIMode.allCases, id: \.rawValue) { mode in
                     Text(mode.displayName).tag(mode.rawValue)
                 }
             }
             .pickerStyle(.segmented)
-            .frame(maxWidth: 200)
+            .frame(maxWidth: 220)
 
-            if settings.aiModeEnum == .local {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Local Model Server")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text("Use this for Ollama or any local server you control on the Mac.")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                    Text("Local Endpoint")
-                        .font(.system(size: 12, weight: .medium))
-                    TextField("http://localhost:11434", text: Binding(
-                        get: { settings.aiEndpoint },
-                        set: { settings.aiEndpoint = $0 }
-                    ))
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12))
-                    Text("Model Name")
-                        .font(.system(size: 12, weight: .medium))
-                    TextField("e.g. llama3", text: Binding(
-                        get: { settings.aiModel },
-                        set: { settings.aiModel = $0 }
-                    ))
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12))
-                    Text("Endpoint and Model Name are shared with API mode, so edits here carry over when you switch modes.")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("OpenAI-Compatible API")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text("Use OpenAI, OpenRouter, MiniMax, or any provider that accepts the OpenAI chat-completions format.")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                    Text("API Key")
-                        .font(.system(size: 12, weight: .medium))
-                    SecureField("Enter API key", text: Binding(
-                        get: { settings.aiApiKey },
-                        set: { settings.aiApiKey = $0 }
-                    ))
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12))
-                    Text("API Header")
-                        .font(.system(size: 12, weight: .medium))
-                    TextField("Authorization", text: Binding(
-                        get: { settings.aiAPIHeaderName },
-                        set: { settings.aiAPIHeaderName = $0 }
-                    ))
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12))
-                    Text("API Endpoint")
-                        .font(.system(size: 12, weight: .medium))
-                    TextField("https://api.openai.com/v1", text: Binding(
-                        get: { settings.aiEndpoint },
-                        set: { settings.aiEndpoint = $0 }
-                    ))
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12))
-                    Text("Model Name")
-                        .font(.system(size: 12, weight: .medium))
-                    TextField("e.g. gpt-4", text: Binding(
-                        get: { settings.aiModel },
-                        set: { settings.aiModel = $0 }
-                    ))
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12))
-                    Text("Endpoint and Model Name are shared with Local mode; only the API key and header stay API-specific.")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                }
-            }
+            activeAIProviderCard
 
             Text("AI will add content to the end of the current note when triggered.")
                 .font(.system(size: 11))
@@ -335,48 +276,160 @@ struct SettingsView: View {
 
             Divider()
 
-            // Diagnose section
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Diagnostics")
-                    .font(.system(size: 13, weight: .semibold))
+            aiDiagnosticsSection
+        }
+    }
 
-                HStack {
-                    Button(action: {
-                        runDiagnose()
-                    }) {
-                        HStack(spacing: 4) {
-                            if isDiagnosing {
-                                ProgressView()
-                                    .scaleEffect(0.6)
-                                    .frame(width: 14, height: 14)
-                            } else {
-                                Image(systemName: "stethoscope")
-                                    .font(.system(size: 12))
-                            }
-                            Text(isDiagnosing ? "Testing..." : "Test Connection")
-                                .font(.system(size: 12, weight: .medium))
+    private var activeAIProviderCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: settings.aiModeEnum == .local ? "desktopcomputer" : "network")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 20)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(settings.aiModeEnum == .local ? "Local Model Server" : "OpenAI-Compatible API")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(settings.aiModeEnum == .local
+                         ? "Use Ollama or another local server running on this Mac. These fields belong only to Local mode."
+                         : "Use OpenAI, OpenRouter, MiniMax, or another compatible provider. These fields belong only to API mode.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Text(settings.aiModeEnum == .local ? "LOCAL" : "API")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(settings.isDarkMode ? .white.opacity(0.9) : .black.opacity(0.75))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(settings.isDarkMode ? Color.white.opacity(0.09) : Color.black.opacity(0.06))
+                    )
+            }
+
+            if settings.aiModeEnum == .local {
+                VStack(alignment: .leading, spacing: 8) {
+                    aiFieldLabel("Local Endpoint")
+                    TextField("http://localhost:11434", text: Binding(
+                        get: { settings.aiLocalEndpoint },
+                        set: { settings.aiLocalEndpoint = $0 }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12))
+
+                    aiFieldLabel("Model Name")
+                    TextField("e.g. llama3", text: Binding(
+                        get: { settings.aiLocalModel },
+                        set: { settings.aiLocalModel = $0 }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12))
+
+                    Text("Only Local mode reads these values.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    aiFieldLabel("API Key")
+                    SecureField("Enter API key", text: Binding(
+                        get: { settings.aiApiKey },
+                        set: { settings.aiApiKey = $0 }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12))
+
+                    aiFieldLabel("API Header")
+                    TextField("Authorization", text: Binding(
+                        get: { settings.aiAPIHeaderName },
+                        set: { settings.aiAPIHeaderName = $0 }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12))
+
+                    aiFieldLabel("API Endpoint")
+                    TextField("https://api.openai.com/v1", text: Binding(
+                        get: { settings.aiAPIEndpoint },
+                        set: { settings.aiAPIEndpoint = $0 }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12))
+
+                    aiFieldLabel("Model Name")
+                    TextField("e.g. gpt-4", text: Binding(
+                        get: { settings.aiAPIModel },
+                        set: { settings.aiAPIModel = $0 }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12))
+
+                    Text("Only API mode reads these values, including the custom auth header.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(settings.isDarkMode ? Color.white.opacity(0.05) : Color.black.opacity(0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(settings.isDarkMode ? Color.white.opacity(0.08) : Color.black.opacity(0.06), lineWidth: 1)
+        )
+    }
+
+    private var aiDiagnosticsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Diagnostics")
+                .font(.system(size: 13, weight: .semibold))
+            Text(settings.aiModeEnum == .local
+                 ? "Checks the Local endpoint by calling `/api/tags` on the server above."
+                 : "Checks the API endpoint by calling `/models` with the API key and header above.")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+
+            HStack {
+                Button(action: {
+                    runDiagnose()
+                }) {
+                    HStack(spacing: 4) {
+                        if isDiagnosing {
+                            ProgressView()
+                                .scaleEffect(0.6)
+                                .frame(width: 14, height: 14)
+                        } else {
+                            Image(systemName: "stethoscope")
+                                .font(.system(size: 12))
                         }
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isDiagnosing)
-
-                    if !diagnoseStatus.isEmpty {
-                        Text(diagnoseStatus)
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
+                        Text(isDiagnosing ? "Testing..." : aiDiagnosticsButtonTitle)
+                            .font(.system(size: 12, weight: .medium))
                     }
                 }
+                .buttonStyle(.bordered)
+                .disabled(isDiagnosing)
 
-                if !diagnoseResult.isEmpty {
-                    Text(diagnoseResult)
-                        .font(.system(size: 11, design: .monospaced))
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(settings.isDarkMode ? Color.white.opacity(0.05) : Color.black.opacity(0.03))
-                        )
+                if !diagnoseStatus.isEmpty {
+                    Text(diagnoseStatus)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
                 }
+            }
+
+            if !diagnoseResult.isEmpty {
+                Text(diagnoseResult)
+                    .font(.system(size: 11, design: .monospaced))
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(settings.isDarkMode ? Color.white.opacity(0.05) : Color.black.opacity(0.03))
+                    )
             }
         }
     }
@@ -407,6 +460,16 @@ struct SettingsView: View {
                 }
             }
         )
+    }
+
+    private var aiDiagnosticsButtonTitle: String {
+        settings.aiModeEnum == .local ? "Test Local Server" : "Test API Connection"
+    }
+
+    private func resetAIDiagnostics() {
+        isDiagnosing = false
+        diagnoseResult = ""
+        diagnoseStatus = ""
     }
 
     // MARK: - Helper
@@ -444,6 +507,11 @@ struct SettingsView: View {
         return Toggle(label, isOn: isOn)
             .toggleStyle(.checkbox)
             .font(.system(size: 11))
+    }
+
+    private func aiFieldLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 12, weight: .medium))
     }
 
     private let hotkeyKeys: [(Int, String)] = SettingsManager.hotkeyKeyNames

@@ -72,6 +72,12 @@ class SettingsManager: ObservableObject {
     let objectWillChange = ObservableObjectPublisher()
     private let defaults = UserDefaults.standard
     let promptInjectionConfiguration = PromptInjectionConfigurationStore.shared.configuration
+    private let legacyAIEndpointKey = "aiEndpoint"
+    private let legacyAIModelKey = "aiModel"
+    private let aiLocalEndpointKey = "aiLocalEndpoint"
+    private let aiLocalModelKey = "aiLocalModel"
+    private let aiAPIEndpointKey = "aiAPIEndpoint"
+    private let aiAPIModelKey = "aiAPIModel"
 
     var positionMode: String {
         get { defaults.string(forKey: "positionMode") ?? PositionMode.cursor.rawValue }
@@ -85,9 +91,17 @@ class SettingsManager: ObservableObject {
         get { defaults.string(forKey: "aiMode") ?? AIMode.local.rawValue }
         set { objectWillChange.send(); defaults.set(newValue, forKey: "aiMode") }
     }
-    var aiEndpoint: String {
-        get { defaults.string(forKey: "aiEndpoint") ?? "http://localhost:11434" }
-        set { objectWillChange.send(); defaults.set(newValue, forKey: "aiEndpoint") }
+    var aiLocalEndpoint: String {
+        get { defaults.string(forKey: aiLocalEndpointKey) ?? "http://localhost:11434" }
+        set { objectWillChange.send(); defaults.set(newValue, forKey: aiLocalEndpointKey) }
+    }
+    var aiLocalModel: String {
+        get { defaults.string(forKey: aiLocalModelKey) ?? "" }
+        set { objectWillChange.send(); defaults.set(newValue, forKey: aiLocalModelKey) }
+    }
+    var aiAPIEndpoint: String {
+        get { defaults.string(forKey: aiAPIEndpointKey) ?? "https://api.openai.com/v1" }
+        set { objectWillChange.send(); defaults.set(newValue, forKey: aiAPIEndpointKey) }
     }
     var aiApiKey: String {
         get { defaults.string(forKey: "aiApiKey") ?? "" }
@@ -97,9 +111,9 @@ class SettingsManager: ObservableObject {
         get { defaults.string(forKey: "aiAPIHeaderName") ?? "Authorization" }
         set { objectWillChange.send(); defaults.set(newValue, forKey: "aiAPIHeaderName") }
     }
-    var aiModel: String {
-        get { defaults.string(forKey: "aiModel") ?? "" }
-        set { objectWillChange.send(); defaults.set(newValue, forKey: "aiModel") }
+    var aiAPIModel: String {
+        get { defaults.string(forKey: aiAPIModelKey) ?? "" }
+        set { objectWillChange.send(); defaults.set(newValue, forKey: aiAPIModelKey) }
     }
     var aiResponseLengthID: String {
         get { promptInjectionConfiguration.normalizedResponseLengthID(defaults.string(forKey: "aiResponseLengthPreset")) }
@@ -171,7 +185,9 @@ class SettingsManager: ObservableObject {
         set { objectWillChange.send(); defaults.set(newValue, forKey: "autoCheckUpdates") }
     }
 
-    private init() {}
+    private init() {
+        migrateLegacyAISettingsIfNeeded()
+    }
 
     var hotkeyDisplayLabel: String {
         var parts: [String] = []
@@ -197,6 +213,24 @@ class SettingsManager: ObservableObject {
     var aiModeEnum: AIMode {
         get { AIMode(rawValue: aiMode) ?? .local }
         set { aiMode = newValue.rawValue }
+    }
+
+    var currentAIEndpoint: String {
+        switch aiModeEnum {
+        case .local:
+            return aiLocalEndpoint
+        case .api:
+            return aiAPIEndpoint
+        }
+    }
+
+    var currentAIModel: String {
+        switch aiModeEnum {
+        case .local:
+            return aiLocalModel
+        case .api:
+            return aiAPIModel
+        }
     }
 
     var aiPromptSelection: PromptInjectionSelection {
@@ -250,6 +284,25 @@ class SettingsManager: ObservableObject {
 
     func resetAIPromptSelection() {
         aiPromptSelection = promptInjectionConfiguration.defaultSelection
+    }
+
+    private func migrateLegacyAISettingsIfNeeded() {
+        let legacyEndpoint = defaults.string(forKey: legacyAIEndpointKey)
+        let legacyModel = defaults.string(forKey: legacyAIModelKey)
+        let legacyMode = AIMode(rawValue: defaults.string(forKey: "aiMode") ?? "") ?? .local
+
+        if defaults.string(forKey: aiLocalEndpointKey) == nil {
+            defaults.set(legacyMode == .local ? (legacyEndpoint ?? "http://localhost:11434") : "http://localhost:11434", forKey: aiLocalEndpointKey)
+        }
+        if defaults.string(forKey: aiAPIEndpointKey) == nil {
+            defaults.set(legacyMode == .api ? (legacyEndpoint ?? "https://api.openai.com/v1") : "https://api.openai.com/v1", forKey: aiAPIEndpointKey)
+        }
+        if defaults.string(forKey: aiLocalModelKey) == nil {
+            defaults.set(legacyMode == .local ? (legacyModel ?? "") : "", forKey: aiLocalModelKey)
+        }
+        if defaults.string(forKey: aiAPIModelKey) == nil {
+            defaults.set(legacyMode == .api ? (legacyModel ?? "") : "", forKey: aiAPIModelKey)
+        }
     }
 
     var launchAtLogin: Bool {

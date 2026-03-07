@@ -44,12 +44,13 @@ class AIService {
         }
 
         init(settings: SettingsManager) {
+            let mode = settings.aiModeEnum
             self.init(
-                aiMode: settings.aiModeEnum,
-                endpoint: settings.aiEndpoint,
-                apiKey: settings.aiApiKey,
-                apiHeaderName: settings.aiAPIHeaderName,
-                model: settings.aiModel,
+                aiMode: mode,
+                endpoint: mode == .local ? settings.aiLocalEndpoint : settings.aiAPIEndpoint,
+                apiKey: mode == .api ? settings.aiApiKey : "",
+                apiHeaderName: mode == .api ? settings.aiAPIHeaderName : "Authorization",
+                model: mode == .local ? settings.aiLocalModel : settings.aiAPIModel,
                 promptSelection: settings.aiPromptSelection
             )
         }
@@ -170,15 +171,15 @@ class AIService {
 
         switch settings.aiModeEnum {
         case .local:
-            callOllama(endpoint: settings.aiEndpoint,
-                       model: settings.aiModel.isEmpty ? "llama3" : settings.aiModel,
+            callOllama(endpoint: settings.aiLocalEndpoint,
+                       model: settings.aiLocalModel.isEmpty ? "llama3" : settings.aiLocalModel,
                        systemPrompt: systemPrompt, userMessage: userMessage,
                        onStatus: onStatus, completion: completion)
         case .api:
-            callOpenAICompatible(endpoint: settings.aiEndpoint,
+            callOpenAICompatible(endpoint: settings.aiAPIEndpoint,
                                  apiKey: settings.aiApiKey,
                                  apiHeaderName: settings.aiAPIHeaderName,
-                                 model: settings.aiModel.isEmpty ? "gpt-4" : settings.aiModel,
+                                 model: settings.aiAPIModel.isEmpty ? "gpt-4" : settings.aiAPIModel,
                                  systemPrompt: systemPrompt, userMessage: userMessage,
                                  onStatus: onStatus, completion: completion)
         }
@@ -357,7 +358,7 @@ class AIService {
         onStatus("Testing connection...")
         switch mode {
         case .local:
-            let endpoint = settings.aiEndpoint.isEmpty ? "http://localhost:11434" : settings.aiEndpoint
+            let endpoint = settings.aiLocalEndpoint.isEmpty ? "http://localhost:11434" : settings.aiLocalEndpoint
             guard let url = URL(string: "\(endpoint)/api/tags") else {
                 completion(.failure(AIError.invalidURL)); return
             }
@@ -380,7 +381,7 @@ class AIService {
                 }
             }.resume()
         case .api:
-            let endpoint = settings.aiEndpoint.isEmpty ? "https://api.openai.com/v1" : settings.aiEndpoint
+            let endpoint = settings.aiAPIEndpoint.isEmpty ? "https://api.openai.com/v1" : settings.aiAPIEndpoint
             guard let url = URL(string: "\(endpoint)/models") else { completion(.failure(AIError.invalidURL)); return }
             guard !settings.aiApiKey.isEmpty else { completion(.failure(AIError.noAPIKey)); return }
             var req = URLRequest(url: url)

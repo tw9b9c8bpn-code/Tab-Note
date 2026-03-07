@@ -1,5 +1,27 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-07, full Local/API settings split)
+- Reworked AI settings storage so Local and API now have separate persisted fields in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsManager.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`
+- Storage/runtime changes:
+  - Local mode now has its own `Local Endpoint` and `Model Name`
+  - API mode now has its own `API Endpoint`, `Model Name`, `API Key`, and `API Header`
+  - active AI requests and diagnostics now read only the currently selected mode's fields instead of using shared endpoint/model values
+  - legacy shared `aiEndpoint` / `aiModel` values are migrated into the new mode-specific keys so existing setups are not lost
+- Rebuilt the AI settings UI in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`
+- UI changes:
+  - the Local/API segmented control now clearly acts as a provider toggle
+  - only the selected provider's fields are shown inside a dedicated config card
+  - diagnostics messaging now changes with the selected provider so it is obvious what gets tested
+- Preferences / dislikes reinforced from user feedback:
+  - prefers Local and API settings to be completely separate, not the same stored fields with different labels
+  - prefers the AI provider chooser to behave like a clear one-or-the-other toggle with only relevant fields visible
+- Mistakes / wrong assumptions fixed in this pass:
+  - I previously assumed shared endpoint/model storage could stay as long as the UI explained it, but the preferred behavior is truly separate Local and API configuration.
+  - I treated the earlier request as a copy/labeling issue around MiniMax support, but the larger underlying problem was that the settings architecture itself still mixed the two provider modes together.
+
 ## Completed in this pass (2026-03-07, API header support + shared endpoint/model clarity)
 - Added provider-specific API header support in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`
