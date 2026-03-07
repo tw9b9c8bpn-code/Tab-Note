@@ -1,5 +1,21 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-08, GPT-5 nano token parameter fix)
+- Fixed OpenAI-compatible GPT-5-family request payloads in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`
+- Backend/API changes:
+  - OpenAI-compatible requests no longer hardcode `max_tokens` for every model
+  - GPT-5-family and OpenAI reasoning-family models now send `max_completion_tokens` instead
+  - the lightweight API diagnostic probe now follows the same token-parameter rule, so GPT-5 Nano can validate from settings too
+- Updated backend documentation in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/AI_BACKEND_IMPLEMENTATION.md`
+- Documentation changes:
+  - documented that OpenAI-compatible payloads are not uniform across model families and that GPT-5-family models need `max_completion_tokens`
+- Preferences / dislikes reinforced from user feedback:
+  - prefers new model support to work immediately from the existing API settings UI without provider-specific trial and error
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had still treated OpenAI-compatible chat payloads as one uniform shape, but GPT-5 Nano proved that token-limit fields now vary by model family and the backend must branch accordingly.
+
 ## Completed in this pass (2026-03-07, saved API profiles dropdown)
 - Added persisted saved API profiles in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsManager.swift`

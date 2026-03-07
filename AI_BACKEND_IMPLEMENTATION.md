@@ -20,6 +20,7 @@ This document exists because the AI backend went through several incorrect itera
 - API diagnostics must test the real request path, not a generic health endpoint.
 - Inline AI popup output must hide provider reasoning/thinking text and only show the final visible answer.
 - API mode supports saved profiles that store endpoint, header, key, and model together for quick switching.
+- OpenAI-compatible payloads are not fully uniform across model families; GPT-5-family models need `max_completion_tokens` instead of `max_tokens`.
 
 ## Implementation iterations
 
@@ -133,6 +134,7 @@ Typical providers:
 Notes:
 - MiniMax has been confirmed to accept `Authorization: Bearer ...` on the OpenAI-compatible completion path.
 - Do not assume `/models` is available just because `/chat/completions` works.
+- Do not assume `max_tokens` works for every OpenAI-compatible model; GPT-5-family models require `max_completion_tokens`.
 
 ### Anthropic-compatible
 

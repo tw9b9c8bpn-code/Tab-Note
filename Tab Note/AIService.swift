@@ -555,13 +555,13 @@ class AIService {
             transport: .openAICompatible
         )
         req.timeoutInterval = 180
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": model,
             "messages": [["role": "system", "content": systemPrompt], ["role": "user", "content": userMessage]],
             "temperature": temperature,
-            "max_tokens": maxTokens,
             "stream": streamResponse
         ]
+        body.merge(openAICompletionLimitField(model: model, maxTokens: maxTokens)) { _, new in new }
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         if streamResponse {
@@ -903,16 +903,17 @@ class AIService {
         let body: [String: Any]
         switch transport {
         case .openAICompatible:
-            body = [
+            var openAIBody: [String: Any] = [
                 "model": trimmedModel,
                 "messages": [
                     ["role": "system", "content": "You are a connectivity test. Reply with OK."],
                     ["role": "user", "content": "Reply with OK."]
                 ],
                 "temperature": 0,
-                "max_tokens": 8,
                 "stream": false
             ]
+            openAIBody.merge(openAICompletionLimitField(model: trimmedModel, maxTokens: 8)) { _, new in new }
+            body = openAIBody
         case .anthropicCompatible:
             body = [
                 "model": trimmedModel,
@@ -928,6 +929,19 @@ class AIService {
 
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         return APIDiagnosticProbe(transport: transport, request: request, model: trimmedModel)
+    }
+
+    private func openAICompletionLimitField(model: String, maxTokens: Int) -> [String: Any] {
+        let key = usesMaxCompletionTokens(for: model) ? "max_completion_tokens" : "max_tokens"
+        return [key: maxTokens]
+    }
+
+    private func usesMaxCompletionTokens(for model: String) -> Bool {
+        let lowercased = model.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return lowercased.hasPrefix("gpt-5")
+            || lowercased.hasPrefix("o1")
+            || lowercased.hasPrefix("o3")
+            || lowercased.hasPrefix("o4")
     }
 
     private func apiConfigurationError(for apiKey: String) -> AIError? {
