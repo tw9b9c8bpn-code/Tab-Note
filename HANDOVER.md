@@ -1,5 +1,29 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-07, saved API profiles dropdown)
+- Added persisted saved API profiles in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsManager.swift`
+- Storage/runtime changes:
+  - API mode now supports multiple saved profiles, each storing name, endpoint, API key, header name, and model together
+  - selecting a saved profile loads the full API config into the active fields
+  - save/update/delete helpers were added so users can keep many provider/model setups and switch between them without retyping
+- Reworked the API settings UI in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`
+- UI changes:
+  - API settings now include a dropdown for saved API settings
+  - users can save the current API config as a new preset, update the selected preset, or delete it
+  - preset switching is intentionally full-config switching, not just a model-name shortcut
+- Updated backend documentation in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/AI_BACKEND_IMPLEMENTATION.md`
+- Documentation changes:
+  - documented saved API profiles as a first-class backend/settings rule so future AI do not collapse them into a single model dropdown or shared ephemeral state
+- Preferences / dislikes reinforced from user feedback:
+  - prefers being able to keep many API model/provider setups and switch between them quickly from a dropdown
+  - prefers saved API configurations to be explicit and reusable instead of retyping fields every time
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had treated API configuration as one current state plus manual edits, but the preferred workflow is keeping multiple saved API setups for fast switching.
+  - A model-only dropdown would have been too narrow because endpoint, key, and header can differ between providers; the saved unit needs to be the full API configuration.
+
 ## Completed in this pass (2026-03-07, backend iteration doc + thinking row cleanup)
 - Added a dedicated backend implementation note in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/AI_BACKEND_IMPLEMENTATION.md`

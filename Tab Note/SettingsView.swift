@@ -244,6 +244,8 @@ struct SettingsView: View {
     @State private var isLoadingLocalModels = false
     @State private var localModelsStatus = ""
     @State private var showsAPIKey = false
+    @State private var apiProfileNameDraft = ""
+    @State private var apiProfileStatus = ""
 
     private var aiSettings: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -282,6 +284,15 @@ struct SettingsView: View {
         .onAppear {
             if settings.aiModeEnum == .local && availableLocalModels.isEmpty {
                 refreshLocalModels()
+            }
+            syncAPIProfileDraft()
+        }
+        .onChange(of: settings.aiAPISelectedProfileID) { _, _ in
+            syncAPIProfileDraft()
+        }
+        .onChange(of: settings.aiModeEnum) { _, newMode in
+            if newMode == .api {
+                syncAPIProfileDraft()
             }
         }
     }
@@ -347,6 +358,59 @@ struct SettingsView: View {
                 }
             } else {
                 VStack(alignment: .leading, spacing: 8) {
+                    aiFieldLabel("Saved API Settings")
+                    Picker(
+                        "",
+                        selection: Binding(
+                            get: { settings.aiAPISelectedProfileID ?? "" },
+                            set: { selectAPIProfile($0) }
+                        )
+                    ) {
+                        Text("Current Unsaved").tag("")
+                        ForEach(settings.aiAPISavedProfiles) { profile in
+                            Text(profile.name).tag(profile.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    TextField("Preset name", text: $apiProfileNameDraft)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
+
+                    HStack(spacing: 8) {
+                        Button("Save Current") {
+                            saveCurrentAPIProfile()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!canSaveAPIProfile)
+
+                        Button("Update") {
+                            updateSelectedAPIProfile()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(settings.aiSelectedAPIProfile == nil)
+
+                        Button("Delete") {
+                            deleteSelectedAPIProfile()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(settings.aiSelectedAPIProfile == nil)
+                    }
+
+                    Text("Saved API settings store endpoint, header, key, and model together so you can switch providers or models from one dropdown.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+
+                    if !apiProfileStatus.isEmpty {
+                        Text(apiProfileStatus)
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Divider()
+
                     aiFieldLabel("API Key")
                     HStack(spacing: 8) {
                         Group {
@@ -526,6 +590,55 @@ struct SettingsView: View {
         isDiagnosing = false
         diagnoseResult = ""
         diagnoseStatus = ""
+    }
+
+    private var canSaveAPIProfile: Bool {
+        let values = [
+            settings.aiAPIEndpoint,
+            settings.aiAPIModel,
+            settings.aiApiKey,
+            apiProfileNameDraft
+        ]
+        return values.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
+    private func syncAPIProfileDraft() {
+        apiProfileNameDraft = settings.aiSelectedAPIProfile?.name ?? settings.suggestedAPIProfileName()
+    }
+
+    private func selectAPIProfile(_ id: String) {
+        if id.isEmpty {
+            settings.aiAPISelectedProfileID = nil
+            apiProfileStatus = "Current API fields are unsaved."
+            syncAPIProfileDraft()
+            return
+        }
+        guard settings.applyAPIProfile(id: id), let profile = settings.aiSelectedAPIProfile else { return }
+        apiProfileNameDraft = profile.name
+        apiProfileStatus = "Loaded \(profile.name)."
+        resetAIDiagnostics()
+    }
+
+    private func saveCurrentAPIProfile() {
+        let profile = settings.saveCurrentAPIProfile(named: apiProfileNameDraft)
+        apiProfileNameDraft = profile.name
+        apiProfileStatus = "Saved \(profile.name)."
+        resetAIDiagnostics()
+    }
+
+    private func updateSelectedAPIProfile() {
+        guard let profile = settings.updateSelectedAPIProfile(named: apiProfileNameDraft) else { return }
+        apiProfileNameDraft = profile.name
+        apiProfileStatus = "Updated \(profile.name)."
+        resetAIDiagnostics()
+    }
+
+    private func deleteSelectedAPIProfile() {
+        guard let selectedProfile = settings.aiSelectedAPIProfile,
+              let removed = settings.deleteAPIProfile(id: selectedProfile.id) else { return }
+        apiProfileStatus = "Deleted \(removed.name)."
+        syncAPIProfileDraft()
+        resetAIDiagnostics()
     }
 
     // MARK: - Helper

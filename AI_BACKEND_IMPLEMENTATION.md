@@ -19,6 +19,7 @@ This document exists because the AI backend went through several incorrect itera
   - everything else uses the OpenAI-compatible path
 - API diagnostics must test the real request path, not a generic health endpoint.
 - Inline AI popup output must hide provider reasoning/thinking text and only show the final visible answer.
+- API mode supports saved profiles that store endpoint, header, key, and model together for quick switching.
 
 ## Implementation iterations
 
@@ -157,6 +158,18 @@ Typical providers:
 - Do not show provider reasoning blocks to the user.
 - Cost, tokens, and speed can be derived heuristically in the popup UI, but the answer body must only contain visible response text.
 
+## API preset rules
+
+- Saved API settings are full profiles, not just model aliases.
+- A saved profile includes:
+  - display name
+  - endpoint
+  - API key
+  - header name
+  - model
+- Selecting a saved profile must load the full API configuration into the active API fields.
+- Keep explicit save/update/delete actions so switching profiles does not silently overwrite another saved setup.
+
 ## Do not regress these
 
 - Do not collapse Local and API settings into shared fields again.
@@ -164,3 +177,4 @@ Typical providers:
 - Do not replace real API diagnostics with `/models`.
 - Do not hardcode one auth header shape for every provider.
 - Do not render `<think>` or similar hidden reasoning in the popup.
+- Do not reduce saved API profiles to a single model dropdown that loses endpoint/header/key context.

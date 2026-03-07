@@ -59,6 +59,31 @@ enum AIMode: String, CaseIterable {
     }
 }
 
+struct AIAPIProfile: Identifiable, Codable, Equatable {
+    var id: String
+    var name: String
+    var endpoint: String
+    var apiKey: String
+    var headerName: String
+    var model: String
+
+    init(
+        id: String = UUID().uuidString,
+        name: String,
+        endpoint: String,
+        apiKey: String,
+        headerName: String,
+        model: String
+    ) {
+        self.id = id
+        self.name = name
+        self.endpoint = endpoint
+        self.apiKey = apiKey
+        self.headerName = headerName
+        self.model = model
+    }
+}
+
 class SettingsManager: ObservableObject {
     static let shared = SettingsManager()
     static let hotkeyKeyNames: [Int: String] = [
@@ -78,6 +103,8 @@ class SettingsManager: ObservableObject {
     private let aiLocalModelKey = "aiLocalModel"
     private let aiAPIEndpointKey = "aiAPIEndpoint"
     private let aiAPIModelKey = "aiAPIModel"
+    private let aiAPISavedProfilesKey = "aiAPISavedProfiles"
+    private let aiAPISelectedProfileIDKey = "aiAPISelectedProfileID"
 
     var positionMode: String {
         get { defaults.string(forKey: "positionMode") ?? PositionMode.cursor.rawValue }
@@ -114,6 +141,34 @@ class SettingsManager: ObservableObject {
     var aiAPIModel: String {
         get { defaults.string(forKey: aiAPIModelKey) ?? "" }
         set { objectWillChange.send(); defaults.set(newValue, forKey: aiAPIModelKey) }
+    }
+    var aiAPISavedProfiles: [AIAPIProfile] {
+        get {
+            guard let data = defaults.data(forKey: aiAPISavedProfilesKey),
+                  let profiles = try? JSONDecoder().decode([AIAPIProfile].self, from: data) else {
+                return []
+            }
+            return profiles
+        }
+        set {
+            objectWillChange.send()
+            if let data = try? JSONEncoder().encode(newValue) {
+                defaults.set(data, forKey: aiAPISavedProfilesKey)
+            } else {
+                defaults.removeObject(forKey: aiAPISavedProfilesKey)
+            }
+        }
+    }
+    var aiAPISelectedProfileID: String? {
+        get { defaults.string(forKey: aiAPISelectedProfileIDKey) }
+        set {
+            objectWillChange.send()
+            if let newValue, !newValue.isEmpty {
+                defaults.set(newValue, forKey: aiAPISelectedProfileIDKey)
+            } else {
+                defaults.removeObject(forKey: aiAPISelectedProfileIDKey)
+            }
+        }
     }
     var aiResponseLengthID: String {
         get { promptInjectionConfiguration.normalizedResponseLengthID(defaults.string(forKey: "aiResponseLengthPreset")) }
@@ -278,12 +333,88 @@ class SettingsManager: ObservableObject {
         SettingsManager.makeAIPromptSummaryChip(selection: aiPromptSelection)
     }
 
+    var aiSelectedAPIProfile: AIAPIProfile? {
+        guard let aiAPISelectedProfileID else { return nil }
+        return aiAPISavedProfiles.first { $0.id == aiAPISelectedProfileID }
+    }
+
     static func makeAIPromptSummaryChip(selection: PromptInjectionSelection) -> String {
         shared.promptInjectionConfiguration.summaryChip(for: selection)
     }
 
     func resetAIPromptSelection() {
         aiPromptSelection = promptInjectionConfiguration.defaultSelection
+    }
+
+    func suggestedAPIProfileName() -> String {
+        let trimmedModel = aiAPIModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedModel.isEmpty {
+            return trimmedModel
+        }
+        if let host = URL(string: aiAPIEndpoint.trimmingCharacters(in: .whitespacesAndNewlines))?.host,
+           !host.isEmpty {
+            return host
+        }
+        return "API Setup \(aiAPISavedProfiles.count + 1)"
+    }
+
+    func saveCurrentAPIProfile(named preferredName: String?) -> AIAPIProfile {
+        let profile = AIAPIProfile(
+            name: normalizedAPIProfileName(preferredName),
+            endpoint: aiAPIEndpoint.trimmingCharacters(in: .whitespacesAndNewlines),
+            apiKey: aiApiKey.trimmingCharacters(in: .whitespacesAndNewlines),
+            headerName: normalizedAPIHeaderName(aiAPIHeaderName),
+            model: aiAPIModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        var profiles = aiAPISavedProfiles
+        profiles.append(profile)
+        aiAPISavedProfiles = profiles
+        aiAPISelectedProfileID = profile.id
+        return profile
+    }
+
+    @discardableResult
+    func applyAPIProfile(id: String) -> Bool {
+        guard let profile = aiAPISavedProfiles.first(where: { $0.id == id }) else { return false }
+        aiAPISelectedProfileID = profile.id
+        aiAPIEndpoint = profile.endpoint
+        aiApiKey = profile.apiKey
+        aiAPIHeaderName = profile.headerName
+        aiAPIModel = profile.model
+        return true
+    }
+
+    @discardableResult
+    func updateSelectedAPIProfile(named preferredName: String?) -> AIAPIProfile? {
+        guard let selectedID = aiAPISelectedProfileID,
+              let index = aiAPISavedProfiles.firstIndex(where: { $0.id == selectedID }) else {
+            return nil
+        }
+
+        var profiles = aiAPISavedProfiles
+        profiles[index] = AIAPIProfile(
+            id: selectedID,
+            name: normalizedAPIProfileName(preferredName),
+            endpoint: aiAPIEndpoint.trimmingCharacters(in: .whitespacesAndNewlines),
+            apiKey: aiApiKey.trimmingCharacters(in: .whitespacesAndNewlines),
+            headerName: normalizedAPIHeaderName(aiAPIHeaderName),
+            model: aiAPIModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        aiAPISavedProfiles = profiles
+        aiAPISelectedProfileID = selectedID
+        return profiles[index]
+    }
+
+    @discardableResult
+    func deleteAPIProfile(id: String) -> AIAPIProfile? {
+        var profiles = aiAPISavedProfiles
+        guard let index = profiles.firstIndex(where: { $0.id == id }) else { return nil }
+        let removed = profiles.remove(at: index)
+        aiAPISavedProfiles = profiles
+        if aiAPISelectedProfileID == id {
+            aiAPISelectedProfileID = nil
+        }
+        return removed
     }
 
     private func migrateLegacyAISettingsIfNeeded() {
@@ -303,6 +434,16 @@ class SettingsManager: ObservableObject {
         if defaults.string(forKey: aiAPIModelKey) == nil {
             defaults.set(legacyMode == .api ? (legacyModel ?? "") : "", forKey: aiAPIModelKey)
         }
+    }
+
+    private func normalizedAPIProfileName(_ preferredName: String?) -> String {
+        let trimmed = preferredName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? suggestedAPIProfileName() : trimmed
+    }
+
+    private func normalizedAPIHeaderName(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Authorization" : trimmed
     }
 
     var launchAtLogin: Bool {
