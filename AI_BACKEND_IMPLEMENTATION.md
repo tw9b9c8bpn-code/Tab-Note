@@ -21,6 +21,7 @@ This document exists because the AI backend went through several incorrect itera
 - Inline AI popup output must hide provider reasoning/thinking text and only show the final visible answer.
 - API mode supports saved profiles that store endpoint, header, key, and model together for quick switching.
 - OpenAI-compatible payloads are not fully uniform across model families; GPT-5-family models need `max_completion_tokens` instead of `max_tokens`.
+- OpenAI-compatible GPT-5/reasoning-family models also reject custom sampling fields like `temperature`; omit them and let the provider use its default.
 
 ## Implementation iterations
 

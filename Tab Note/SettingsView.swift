@@ -42,20 +42,20 @@ struct SettingsView: View {
         ZStack {
             panelBackground
 
-            VStack(spacing: 18) {
+            VStack(spacing: 12) {
                 header
                 tabBar
 
                 ScrollView {
-                    VStack(spacing: 18) {
+                    VStack(spacing: 12) {
                         selectedTabContent
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.bottom, 6)
+                    .padding(.bottom, 2)
                 }
                 .scrollIndicators(.never)
             }
-            .padding(20)
+            .padding(16)
         }
         .frame(minWidth: 560, minHeight: 520)
         .onAppear {
@@ -78,14 +78,14 @@ struct SettingsView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text("Settings")
-                    .font(.system(size: 24, weight: .semibold, design: .rounded))
+                    .font(.system(size: 21, weight: .semibold, design: .rounded))
                     .foregroundStyle(primaryTextColor)
 
                 Text("Tune hotkeys, AI providers, and note recovery.")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(secondaryTextColor)
             }
 
@@ -106,7 +106,7 @@ struct SettingsView: View {
     }
 
     private var tabBar: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             ForEach([SettingsTab.general, .ai, .deletedNotes]) { tab in
                 Button {
                     withAnimation(.spring(response: 0.26, dampingFraction: 0.9)) {
@@ -114,7 +114,6 @@ struct SettingsView: View {
                     }
                 } label: {
                     Text(tab.rawValue)
-                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(SettingsPillButtonStyle(
                     isDarkMode: settings.isDarkMode,
@@ -123,6 +122,7 @@ struct SettingsView: View {
                 ))
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -138,16 +138,16 @@ struct SettingsView: View {
     }
 
     private var generalSettings: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             settingsCard {
                 sectionHeader(
                     "Global Hotkey",
                     subtitle: "Choose the shortcut that reveals or hides Tab Note from anywhere."
                 )
 
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
                     fieldLabel("Modifiers")
-                    HStack(spacing: 10) {
+                    HStack(spacing: 8) {
                         modifierPill(label: "⌘ Cmd", flag: 0x0100)
                         modifierPill(label: "⇧ Shift", flag: 0x0200)
                         modifierPill(label: "⌥ Option", flag: 0x0800)
@@ -155,9 +155,9 @@ struct SettingsView: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
                     fieldLabel("Key")
-                    HStack(spacing: 10) {
+                    HStack(spacing: 8) {
                         Menu {
                             ForEach(hotkeyKeys, id: \.0) { code, label in
                                 Button(label) {
@@ -255,7 +255,7 @@ struct SettingsView: View {
     }
 
     private var aiSettings: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             settingsCard {
                 HStack {
                     Spacer()
@@ -290,9 +290,9 @@ struct SettingsView: View {
                     : "Sends a real provider-aware API request using the active endpoint, header, and model."
                 )
 
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     Button(action: runDiagnose) {
-                        HStack(spacing: 6) {
+                        HStack(spacing: 5) {
                             if isDiagnosing {
                                 ProgressView()
                                     .controlSize(.small)
@@ -351,15 +351,15 @@ struct SettingsView: View {
             }
 
             labeledInput("Model Name") {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
                     textInput(placeholder: "e.g. llama3", text: Binding(
                         get: { settings.aiLocalModel },
                         set: { settings.aiLocalModel = $0 }
                     ))
 
-                    HStack(spacing: 10) {
+                    HStack(spacing: 8) {
                         Button(action: refreshLocalModels) {
-                            HStack(spacing: 6) {
+                            HStack(spacing: 5) {
                                 if isLoadingLocalModels {
                                     ProgressView()
                                         .controlSize(.small)
@@ -437,7 +437,7 @@ struct SettingsView: View {
                 textInput(placeholder: "Preset name", text: $apiProfileNameDraft)
             }
 
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Button("Save Current") {
                     saveCurrentAPIProfile()
                 }
@@ -489,7 +489,7 @@ struct SettingsView: View {
             )
 
             labeledInput("API Key") {
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     if showsAPIKey {
                         textInput(placeholder: "Enter API key", text: Binding(
                             get: { settings.aiApiKey },
@@ -549,7 +549,7 @@ struct SettingsView: View {
     }
 
     private var deletedNotesSettings: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             settingsCard {
                 sectionHeader(
                     "Deleted Notes",
@@ -574,7 +574,7 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 20)
                 } else {
-                    LazyVStack(spacing: 10) {
+                    LazyVStack(spacing: 8) {
                         ForEach(store.deletedNotes) { note in
                             HStack(spacing: 12) {
                                 VStack(alignment: .leading, spacing: 4) {
@@ -598,7 +598,7 @@ struct SettingsView: View {
                                     isSelected: false
                                 ))
                             }
-                            .padding(14)
+                            .padding(12)
                             .background(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                                     .fill(fieldFill)
@@ -667,41 +667,41 @@ struct SettingsView: View {
     }
 
     private func settingsCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             content()
         }
-        .padding(18)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(cardFill)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(outlineColor, lineWidth: 1)
         )
     }
 
     private func sectionHeader(_ title: String, subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(primaryTextColor)
 
             Text(subtitle)
-                .font(.system(size: 12))
+                .font(.system(size: 11))
                 .foregroundStyle(secondaryTextColor)
         }
     }
 
     private func fieldLabel(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 12, weight: .semibold))
+            .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(primaryTextColor)
     }
 
     private func labeledInput<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             fieldLabel(title)
             content()
         }
@@ -710,16 +710,16 @@ struct SettingsView: View {
     private func textInput(placeholder: String, text: Binding<String>) -> some View {
         TextField(placeholder, text: text)
             .textFieldStyle(.plain)
-            .font(.system(size: 13, weight: .medium))
+            .font(.system(size: 12, weight: .medium))
             .foregroundStyle(primaryTextColor)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .fill(fieldFill)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .stroke(outlineColor, lineWidth: 1)
             )
     }
@@ -727,31 +727,31 @@ struct SettingsView: View {
     private func secureInput(placeholder: String, text: Binding<String>) -> some View {
         SecureField(placeholder, text: text)
             .textFieldStyle(.plain)
-            .font(.system(size: 13, weight: .medium))
+            .font(.system(size: 12, weight: .medium))
             .foregroundStyle(primaryTextColor)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .fill(fieldFill)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .stroke(outlineColor, lineWidth: 1)
             )
     }
 
     private func capsuleMenuLabel(_ title: String) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Text(title)
                 .lineLimit(1)
             Image(systemName: "chevron.down")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
         }
-        .font(.system(size: 12, weight: .medium))
+        .font(.system(size: 11, weight: .medium))
         .foregroundStyle(primaryTextColor)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .background(
             Capsule()
                 .fill(fieldFill)
@@ -786,13 +786,13 @@ struct SettingsView: View {
         selection: Binding<Value>,
         options: [(String, Value)]
     ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(primaryTextColor)
 
             Text(subtitle)
-                .font(.system(size: 12))
+                .font(.system(size: 11))
                 .foregroundStyle(secondaryTextColor)
 
             choiceStrip(selection: selection, options: options)
@@ -816,7 +816,7 @@ struct SettingsView: View {
         selection: Binding<Value>,
         options: [(String, Value)]
     ) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             ForEach(options.indices, id: \.self) { index in
                 let option = options[index]
                 Button(option.0) {
@@ -982,11 +982,11 @@ private struct SettingsPillButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: compact ? 12 : 12, weight: .semibold))
+            .font(.system(size: compact ? 11 : 11.5, weight: .semibold))
             .foregroundStyle(foregroundColor(configuration: configuration))
-            .padding(.horizontal, compact ? 11 : 15)
-            .padding(.vertical, compact ? 8 : 10)
-            .frame(minHeight: compact ? 0 : 38)
+            .padding(.horizontal, compact ? 10 : 12)
+            .padding(.vertical, compact ? 6 : 7)
+            .frame(minHeight: compact ? 0 : 32)
             .background(
                 Capsule()
                     .fill(backgroundColor(configuration: configuration))

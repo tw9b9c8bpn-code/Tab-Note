@@ -1,5 +1,23 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-08, compact settings density + GPT-5 temperature fix)
+- Tightened settings UI density in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`
+- UI changes:
+  - reduced spacing, padding, and corner radii across cards, pills, and fields
+  - top tabs no longer stretch across the full width, so the settings popup reads more compactly
+  - field controls, menus, and pill buttons now use denser metrics for a tighter overall feel
+- Backend/API changes:
+  - OpenAI-compatible GPT-5/reasoning-family requests now omit explicit `temperature` in `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`
+  - the API diagnostic probe follows the same rule, so GPT-5-family models no longer fail on `temperature: 0`
+- Updated backend documentation in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/AI_BACKEND_IMPLEMENTATION.md`
+- Preferences / dislikes reinforced from user feedback:
+  - prefers a compact settings UI and dislikes airy spacing in pill-shaped controls and fields
+  - expects GPT-5-family OpenAI models to work from the existing API setup without backend-specific parameter errors
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had only corrected the GPT-5-family token-limit field and missed that explicit sampling parameters were also non-uniform; for these models, `temperature` must be omitted rather than set to a custom value.
+
 ## Completed in this pass (2026-03-08, settings UI polish + resizable floating panel)
 - Reworked settings UI in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`

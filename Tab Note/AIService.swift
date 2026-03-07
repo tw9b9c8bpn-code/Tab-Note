@@ -558,9 +558,9 @@ class AIService {
         var body: [String: Any] = [
             "model": model,
             "messages": [["role": "system", "content": systemPrompt], ["role": "user", "content": userMessage]],
-            "temperature": temperature,
             "stream": streamResponse
         ]
+        body.merge(openAISamplingFields(model: model, temperature: temperature)) { _, new in new }
         body.merge(openAICompletionLimitField(model: model, maxTokens: maxTokens)) { _, new in new }
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
@@ -909,9 +909,9 @@ class AIService {
                     ["role": "system", "content": "You are a connectivity test. Reply with OK."],
                     ["role": "user", "content": "Reply with OK."]
                 ],
-                "temperature": 0,
                 "stream": false
             ]
+            openAIBody.merge(openAISamplingFields(model: trimmedModel, temperature: 0)) { _, new in new }
             openAIBody.merge(openAICompletionLimitField(model: trimmedModel, maxTokens: 8)) { _, new in new }
             body = openAIBody
         case .anthropicCompatible:
@@ -936,12 +936,25 @@ class AIService {
         return [key: maxTokens]
     }
 
+    private func openAISamplingFields(model: String, temperature: Double) -> [String: Any] {
+        guard supportsCustomOpenAISampling(for: model) else { return [:] }
+        return ["temperature": temperature]
+    }
+
     private func usesMaxCompletionTokens(for model: String) -> Bool {
         let lowercased = model.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return lowercased.hasPrefix("gpt-5")
             || lowercased.hasPrefix("o1")
             || lowercased.hasPrefix("o3")
             || lowercased.hasPrefix("o4")
+    }
+
+    private func supportsCustomOpenAISampling(for model: String) -> Bool {
+        let lowercased = model.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return !lowercased.hasPrefix("gpt-5")
+            && !lowercased.hasPrefix("o1")
+            && !lowercased.hasPrefix("o3")
+            && !lowercased.hasPrefix("o4")
     }
 
     private func apiConfigurationError(for apiKey: String) -> AIError? {
