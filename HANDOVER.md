@@ -1,5 +1,18 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-08, compact segmented tab spacing)
+- Reworked segmented settings tab spacing in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`
+- Behavior changes:
+  - top-level settings tabs and AI sub-tabs now use tighter visual padding so they read like compact buttons
+  - hit area stays reasonable through a preserved minimum height instead of airy outer padding
+  - `Deleted Notes` now matches the denser tab height more closely
+- Preferences / dislikes reinforced from user feedback:
+  - wants all settings tabs (`General`, `AI`, `Local`, `API`, `Saved`) to feel very compact
+  - still wants those tabs easy to click, so density should come from reduced visual padding rather than making the control tiny
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had left the segmented controls visually too padded after increasing hit area earlier, which made them feel more like floating capsules than compact buttons.
+
 ## Completed in this pass (2026-03-08, JSON preset metadata cleanup + compact icon-only model picker)
 - Reworked JSON/API saved-preset draft persistence in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsManager.swift`

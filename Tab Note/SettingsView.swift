@@ -178,7 +178,7 @@ struct SettingsView: View {
     }
 
     private var tabBar: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             mergedSegmentedControl(
                 selection: Binding(
                     get: { selectedTab },
@@ -207,7 +207,7 @@ struct SettingsView: View {
                 isDarkMode: settings.isDarkMode,
                 tone: .accent,
                 isSelected: selectedTab == .deletedNotes,
-                minimumHeight: 36
+                minimumHeight: 32
             ))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1233,9 +1233,9 @@ struct SettingsView: View {
                 .buttonStyle(.plain)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(isSelected ? Color.white : primaryTextColor.opacity(0.88))
-                .padding(.horizontal, 18)
-                .padding(.vertical, 9)
-                .frame(minHeight: 36)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                .frame(minHeight: 32)
                 .contentShape(Rectangle())
                 .background(
                     segmentBackground(
@@ -1246,7 +1246,7 @@ struct SettingsView: View {
                 )
             }
         }
-        .padding(3)
+        .padding(2)
         .background(
             Capsule()
                 .fill(fieldFill)
