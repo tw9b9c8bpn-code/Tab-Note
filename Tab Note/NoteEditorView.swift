@@ -1695,6 +1695,12 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
     private var activeRequestID = UUID()
     private var pendingStreamingAnswer: String?
     private var streamingRefreshTimer: Timer?
+    /// Normalized text that the display is catching up to (character-drip target).
+    private var normalizedTarget: String = ""
+    /// Number of characters currently revealed in the display.
+    private var revealedCount: Int = 0
+    /// Fast timer (~20ms) that incrementally reveals characters for smooth animation.
+    private var displayDripTimer: Timer?
     private var fallbackAnswerBeforeRequest: String?
     private var fallbackThoughtDurationBeforeRequest: TimeInterval?
     private var isTemporarilyHiddenByApp = false
@@ -1802,22 +1808,42 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
             model.firstTokenReceivedAt = Date()
         }
 
-        // Throttle UI refresh to avoid O(n²) re-rendering on every token.
-        // Store the raw partial and normalize + render only on timer ticks (~50ms).
+        // Store the raw partial for the normalization timer to pick up.
         pendingStreamingAnswer = rawPartial
+
         if streamingRefreshTimer == nil {
-            // First token – normalize and render immediately for responsiveness.
+            // First token – normalize and reveal immediately for responsiveness.
             let normalized = normalizeStreamingAnswer(rawPartial)
+            normalizedTarget = normalized
+            revealedCount = normalized.count
             model.rawAnswer = normalized
             refreshPanelLayout(useAnchor: false)
+
+            // Normalization timer: every 50ms, run the expensive regex normalization
+            // and update the target string for the drip timer to catch up to.
             streamingRefreshTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+                guard let self, let pending = self.pendingStreamingAnswer else { return }
+                self.pendingStreamingAnswer = nil
+                let normalized = self.normalizeStreamingAnswer(pending)
+                self.normalizedTarget = normalized
+            }
+
+            // Display drip timer: every 20ms (~50fps), reveal a few more characters
+            // from normalizedTarget to create a smooth "flowing text" effect.
+            displayDripTimer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { [weak self] _ in
                 guard let self else { return }
-                if let pending = self.pendingStreamingAnswer {
-                    self.pendingStreamingAnswer = nil
-                    let normalized = self.normalizeStreamingAnswer(pending)
-                    self.model.rawAnswer = normalized
-                    self.refreshPanelLayout(useAnchor: false)
-                }
+                let target = self.normalizedTarget
+                guard self.revealedCount < target.count else { return }
+
+                // Reveal enough characters to catch up within ~2-3 frames,
+                // so text flows smoothly without falling behind.
+                let remaining = target.count - self.revealedCount
+                let charsThisTick = max(1, remaining / 3)
+                self.revealedCount = min(target.count, self.revealedCount + charsThisTick)
+
+                let revealed = String(target.prefix(self.revealedCount))
+                self.model.rawAnswer = revealed
+                self.refreshPanelLayout(useAnchor: false)
             }
         }
     }
@@ -1846,7 +1872,11 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
     private func stopStreamingRefreshTimer() {
         streamingRefreshTimer?.invalidate()
         streamingRefreshTimer = nil
+        displayDripTimer?.invalidate()
+        displayDripTimer = nil
         pendingStreamingAnswer = nil
+        normalizedTarget = ""
+        revealedCount = 0
     }
 
     func present(
@@ -2129,7 +2159,16 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
             )
         }
 
-        panel.setFrame(targetFrame, display: true, animate: false)
+        if model.isStreaming && panel.isVisible {
+            // Animate panel growth during streaming for a smooth visual flow.
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.15
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                panel.animator().setFrame(targetFrame, display: true)
+            }
+        } else {
+            panel.setFrame(targetFrame, display: true, animate: false)
+        }
     }
 
     private func anchoredFrame(for size: NSSize, screenFrame: NSRect, anchorScreenRect: NSRect) -> NSRect {
@@ -3371,8 +3410,24 @@ private struct SelectableAttributedTextView: NSViewRepresentable {
         let appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
         scrollView.appearance = appearance
         textView.appearance = appearance
-        if !textView.attributedString().isEqual(to: attributedText) {
-            textView.textStorage?.setAttributedString(attributedText)
+
+        guard let storage = textView.textStorage else { return }
+        let oldText = storage.string
+        let newText = attributedText.string
+
+        if oldText == newText { return }
+
+        // Optimise for the common streaming case: new text is the old text + appended content.
+        // Using replaceCharacters for the tail avoids NSTextView re-laying-out unchanged text,
+        // which eliminates flicker and keeps the scroll position stable.
+        if newText.hasPrefix(oldText) && !oldText.isEmpty {
+            let appendStart = oldText.endIndex
+            let appendedString = attributedText.attributedSubstring(
+                from: NSRange(appendStart..., in: newText)
+            )
+            storage.append(appendedString)
+        } else {
+            storage.setAttributedString(attributedText)
         }
     }
 }
