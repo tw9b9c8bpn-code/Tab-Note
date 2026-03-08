@@ -1,5 +1,29 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-08, unified API presets + compact AI settings + grouped pricing popup)
+- Reworked API preset storage in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsManager.swift`
+- Reworked settings UI and diagnostics flow in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`
+- Reworked popup cost comparison data in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/NoteEditorView.swift`
+- Updated backend notes in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/AI_BACKEND_IMPLEMENTATION.md`
+- Behavior changes:
+  - saved API presets now store the full API state, including Standard vs JSON request style and the pasted JSON config, so one unified preset list can switch between guided API setups and raw JSON setups
+  - AI diagnostics no longer live in a bottom card; the test action is now attached near the active Local/API/JSON config header and opens a copyable popup result view
+  - settings spacing, card padding, field padding, menu pills, and button pills were tightened for a denser compact feel
+  - token cost comparison now groups models by provider and includes a much broader model list based on the user-provided pricing sheet instead of the old short flat list
+- Preferences / dislikes reinforced from user feedback:
+  - wants JSON presets saved in the same unified API preset list, not in a separate workflow
+  - dislikes airy settings spacing and wants the pill-based UI to feel compact rather than decorative
+  - wants AI diagnostics easy to reach near the active config and the result shown in a copyable popup
+  - wants the token-cost comparison popup to group models clearly by provider and cover more of the market data they supplied
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had previously treated saved API presets as standard-field-only profiles, which blocked JSON-mode switching from the same preset group.
+  - I had left diagnostics as a bottom-of-page section even though that placement was inconvenient once the AI settings area became more complex.
+  - I had kept the cost comparison popup too generic and too flat, which did not match the richer provider-specific pricing data the user wanted reflected in the UI.
+
 ## Completed in this pass (2026-03-08, streaming markdown + fast OpenAI preset documentation)
 - Updated inline popup rendering in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/NoteEditorView.swift`

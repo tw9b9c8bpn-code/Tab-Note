@@ -5,6 +5,7 @@
 //  Created by Kien Tran on 2026-03-03.
 //
 
+import AppKit
 import SwiftUI
 
 private enum SettingsTab: String, CaseIterable, Identifiable {
@@ -34,6 +35,7 @@ struct SettingsView: View {
     @State private var apiProfileNameDraft = ""
     @State private var apiProfileStatus = ""
     @State private var advancedJSONStatus = ""
+    @State private var showsDiagnosticsPopup = false
 
     init(onClose: (() -> Void)? = nil) {
         self.onClose = onClose
@@ -43,12 +45,12 @@ struct SettingsView: View {
         ZStack {
             panelBackground
 
-            VStack(spacing: 12) {
+            VStack(spacing: 8) {
                 header
                 tabBar
 
                 ScrollView {
-                    VStack(spacing: 12) {
+                    VStack(spacing: 8) {
                         selectedTabContent
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -56,9 +58,21 @@ struct SettingsView: View {
                 }
                 .scrollIndicators(.never)
             }
-            .padding(16)
+            .padding(12)
         }
         .frame(minWidth: 560, minHeight: 520)
+        .sheet(isPresented: $showsDiagnosticsPopup) {
+            AIDiagnosticsPopup(
+                title: aiDiagnosticsButtonTitle,
+                subtitle: diagnosticsSubtitleText,
+                status: diagnoseStatus,
+                result: diagnoseResult,
+                isDiagnosing: isDiagnosing,
+                isDarkMode: settings.isDarkMode,
+                onCopy: copyDiagnosticsToPasteboard,
+                onClose: { showsDiagnosticsPopup = false }
+            )
+        }
         .onAppear {
             if settings.aiModeEnum == .local && availableLocalModels.isEmpty {
                 refreshLocalModels()
@@ -87,7 +101,7 @@ struct SettingsView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Settings")
                     .font(.system(size: 21, weight: .semibold, design: .rounded))
@@ -115,7 +129,7 @@ struct SettingsView: View {
     }
 
     private var tabBar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             ForEach([SettingsTab.general, .ai, .deletedNotes]) { tab in
                 Button {
                     withAnimation(.spring(response: 0.26, dampingFraction: 0.9)) {
@@ -147,16 +161,16 @@ struct SettingsView: View {
     }
 
     private var generalSettings: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
             settingsCard {
                 sectionHeader(
                     "Global Hotkey",
                     subtitle: "Choose the shortcut that reveals or hides Tab Note from anywhere."
                 )
 
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
                     fieldLabel("Modifiers")
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         modifierPill(label: "⌘ Cmd", flag: 0x0100)
                         modifierPill(label: "⇧ Shift", flag: 0x0200)
                         modifierPill(label: "⌥ Option", flag: 0x0800)
@@ -164,9 +178,9 @@ struct SettingsView: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
                     fieldLabel("Key")
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         Menu {
                             ForEach(hotkeyKeys, id: \.0) { code, label in
                                 Button(label) {
@@ -227,7 +241,7 @@ struct SettingsView: View {
                     )
                 )
 
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Updates")
@@ -264,9 +278,9 @@ struct SettingsView: View {
     }
 
     private var aiSettings: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
             settingsCard {
-                VStack(spacing: 8) {
+                VStack(spacing: 6) {
                     HStack {
                         Spacer()
                         choiceStrip(
@@ -293,69 +307,16 @@ struct SettingsView: View {
                         }
                     }
                 }
-
-                Text(aiSettingsIntroText)
-                    .font(.system(size: 12))
-                    .foregroundStyle(secondaryTextColor)
-                    .frame(maxWidth: .infinity, alignment: .center)
             }
 
             if settings.aiModeEnum == .local {
                 localAISettingsCard
-            } else if settings.aiAPIRequestStyleEnum == .json {
-                advancedJSONCard
             } else {
                 apiProfilesCard
-                apiConnectionCard
-            }
-
-            settingsCard {
-                sectionHeader(
-                    "Diagnostics",
-                    subtitle: diagnosticsSubtitleText
-                )
-
-                HStack(spacing: 8) {
-                    Button(action: runDiagnose) {
-                        HStack(spacing: 5) {
-                            if isDiagnosing {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Image(systemName: "stethoscope")
-                                    .font(.system(size: 12, weight: .semibold))
-                            }
-                            Text(isDiagnosing ? "Testing..." : aiDiagnosticsButtonTitle)
-                        }
-                    }
-                    .buttonStyle(SettingsPillButtonStyle(
-                        isDarkMode: settings.isDarkMode,
-                        tone: .accent,
-                        isSelected: false
-                    ))
-                    .disabled(isDiagnosing)
-
-                    if !diagnoseStatus.isEmpty {
-                        Text(diagnoseStatus)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(secondaryTextColor)
-                    }
-                }
-
-                if !diagnoseResult.isEmpty {
-                    Text(diagnoseResult)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(primaryTextColor)
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(fieldFill)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .stroke(outlineColor, lineWidth: 1)
-                        )
+                if settings.aiAPIRequestStyleEnum == .json {
+                    advancedJSONCard
+                } else {
+                    apiConnectionCard
                 }
             }
         }
@@ -363,10 +324,14 @@ struct SettingsView: View {
 
     private var localAISettingsCard: some View {
         settingsCard {
-            sectionHeader(
-                "Local Connection",
-                subtitle: "Point Tab Note at your local endpoint and choose an installed model."
-            )
+            HStack(alignment: .top, spacing: 8) {
+                sectionHeader(
+                    "Local Connection",
+                    subtitle: "Point Tab Note at your local endpoint and choose an installed model."
+                )
+                Spacer(minLength: 8)
+                diagnosticsButton
+            }
 
             labeledInput("Local Endpoint") {
                 textInput(placeholder: "http://localhost:11434", text: Binding(
@@ -376,15 +341,15 @@ struct SettingsView: View {
             }
 
             labeledInput("Model Name") {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
                     textInput(placeholder: "e.g. llama3", text: Binding(
                         get: { settings.aiLocalModel },
                         set: { settings.aiLocalModel = $0 }
                     ))
 
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         Button(action: refreshLocalModels) {
-                            HStack(spacing: 5) {
+                            HStack(spacing: 4) {
                                 if isLoadingLocalModels {
                                     ProgressView()
                                         .controlSize(.small)
@@ -434,7 +399,7 @@ struct SettingsView: View {
         settingsCard {
             sectionHeader(
                 "Saved API Setups",
-                subtitle: "Keep multiple provider and model combinations ready for quick switching."
+                subtitle: "Standard and JSON presets live in one list and restore the full API state."
             )
 
             labeledInput("Saved Configurations") {
@@ -448,12 +413,15 @@ struct SettingsView: View {
                     }
 
                     ForEach(settings.aiAPISavedProfiles) { profile in
-                        Button(profile.name) {
+                        Button(profileMenuTitle(for: profile)) {
                             selectAPIProfile(profile.id)
                         }
                     }
                 } label: {
-                    capsuleMenuLabel(settings.aiSelectedAPIProfile?.name ?? "Current Unsaved")
+                    capsuleMenuLabel(
+                        settings.aiSelectedAPIProfile.map { profileMenuTitle(for: $0) }
+                        ?? "Current Unsaved"
+                    )
                 }
                 .menuStyle(.borderlessButton)
             }
@@ -462,7 +430,7 @@ struct SettingsView: View {
                 textInput(placeholder: "Preset name", text: $apiProfileNameDraft)
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Button("Save Current") {
                     saveCurrentAPIProfile()
                 }
@@ -494,7 +462,7 @@ struct SettingsView: View {
                 .disabled(settings.aiSelectedAPIProfile == nil)
             }
 
-            Text("Saved setups store the endpoint, header, key, and model together so switching providers stays one click.")
+            Text("Each preset stores request style, endpoint, header, key, model, and JSON config together.")
                 .font(.system(size: 12))
                 .foregroundStyle(secondaryTextColor)
 
@@ -508,13 +476,17 @@ struct SettingsView: View {
 
     private var apiConnectionCard: some View {
         settingsCard {
-            sectionHeader(
-                "API Connection",
-                subtitle: "Configure the active API endpoint, auth header, secret key, and model."
-            )
+            HStack(alignment: .top, spacing: 8) {
+                sectionHeader(
+                    "API Connection",
+                    subtitle: "Configure the active API endpoint, auth header, secret key, and model."
+                )
+                Spacer(minLength: 8)
+                diagnosticsButton
+            }
 
             labeledInput("API Key") {
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     if showsAPIKey {
                         textInput(placeholder: "Enter API key", text: Binding(
                             get: { settings.aiApiKey },
@@ -575,12 +547,16 @@ struct SettingsView: View {
 
     private var advancedJSONCard: some View {
         settingsCard {
-            sectionHeader(
-                "Advanced JSON Mode",
-                subtitle: "Paste a full JSON request definition. Prompt presets only apply when the body uses the prompt placeholders."
-            )
+            HStack(alignment: .top, spacing: 8) {
+                sectionHeader(
+                    "Advanced JSON Mode",
+                    subtitle: "Paste a full JSON request definition. Prompt presets only apply when the body uses the prompt placeholders."
+                )
+                Spacer(minLength: 8)
+                diagnosticsButton
+            }
 
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Button("Use Example") {
                     settings.aiAPIAdvancedJSONConfiguration = SettingsManager.defaultAdvancedAPIJSONConfiguration
                     resetAIDiagnostics()
@@ -608,15 +584,15 @@ struct SettingsView: View {
             .font(.system(size: 11, weight: .medium, design: .monospaced))
             .foregroundStyle(primaryTextColor)
             .scrollContentBackground(.hidden)
-            .frame(minHeight: 250, maxHeight: 250)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
+            .frame(minHeight: 220, maxHeight: 220)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
             .background(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .fill(fieldFill)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .stroke(outlineColor, lineWidth: 1)
             )
 
@@ -633,7 +609,7 @@ struct SettingsView: View {
     }
 
     private var deletedNotesSettings: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
             settingsCard {
                 sectionHeader(
                     "Deleted Notes",
@@ -641,7 +617,7 @@ struct SettingsView: View {
                 )
 
                 if store.deletedNotes.isEmpty {
-                    VStack(spacing: 10) {
+                    VStack(spacing: 8) {
                         Image(systemName: "trash.slash")
                             .font(.system(size: 30))
                             .foregroundStyle(secondaryTextColor)
@@ -656,11 +632,11 @@ struct SettingsView: View {
                             .multilineTextAlignment(.center)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 20)
+                        .padding(.vertical, 16)
                 } else {
-                    LazyVStack(spacing: 8) {
+                    LazyVStack(spacing: 6) {
                         ForEach(store.deletedNotes) { note in
-                            HStack(spacing: 12) {
+                            HStack(spacing: 10) {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(note.title)
                                         .font(.system(size: 13, weight: .semibold))
@@ -682,13 +658,13 @@ struct SettingsView: View {
                                     isSelected: false
                                 ))
                             }
-                            .padding(12)
+                            .padding(10)
                             .background(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
                                     .fill(fieldFill)
                             )
                             .overlay(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
                                     .stroke(outlineColor, lineWidth: 1)
                             )
                         }
@@ -751,29 +727,29 @@ struct SettingsView: View {
     }
 
     private func settingsCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             content()
         }
-        .padding(14)
+        .padding(11)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(cardFill)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(outlineColor, lineWidth: 1)
         )
     }
 
     private func sectionHeader(_ title: String, subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 2) {
             Text(title)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(primaryTextColor)
 
             Text(subtitle)
-                .font(.system(size: 11))
+                .font(.system(size: 10.5))
                 .foregroundStyle(secondaryTextColor)
         }
     }
@@ -785,7 +761,7 @@ struct SettingsView: View {
     }
 
     private func labeledInput<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             fieldLabel(title)
             content()
         }
@@ -796,14 +772,14 @@ struct SettingsView: View {
             .textFieldStyle(.plain)
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(primaryTextColor)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
             .background(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .fill(fieldFill)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .stroke(outlineColor, lineWidth: 1)
             )
     }
@@ -813,14 +789,14 @@ struct SettingsView: View {
             .textFieldStyle(.plain)
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(primaryTextColor)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
             .background(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .fill(fieldFill)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .stroke(outlineColor, lineWidth: 1)
             )
     }
@@ -834,8 +810,8 @@ struct SettingsView: View {
         }
         .font(.system(size: 11, weight: .medium))
         .foregroundStyle(primaryTextColor)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
         .background(
             Capsule()
                 .fill(fieldFill)
@@ -870,7 +846,7 @@ struct SettingsView: View {
         selection: Binding<Value>,
         options: [(String, Value)]
     ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 5) {
             Text(title)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(primaryTextColor)
@@ -900,7 +876,7 @@ struct SettingsView: View {
         selection: Binding<Value>,
         options: [(String, Value)]
     ) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             ForEach(options.indices, id: \.self) { index in
                 let option = options[index]
                 Button(option.0) {
@@ -925,6 +901,28 @@ struct SettingsView: View {
 
     private var aiDiagnosticsButtonTitle: String {
         settings.aiModeEnum == .local ? "Test Local Server" : "Test API Connection"
+    }
+
+    private var diagnosticsButton: some View {
+        Button(action: openDiagnosticsPopupAndRun) {
+            HStack(spacing: 4) {
+                if isDiagnosing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "stethoscope")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                Text(isDiagnosing ? "Testing" : "Test")
+            }
+        }
+        .buttonStyle(SettingsPillButtonStyle(
+            isDarkMode: settings.isDarkMode,
+            tone: .accent,
+            isSelected: false,
+            compact: true
+        ))
+        .disabled(isDiagnosing)
     }
 
     private func runDiagnose() {
@@ -955,6 +953,11 @@ struct SettingsView: View {
         )
     }
 
+    private func openDiagnosticsPopupAndRun() {
+        showsDiagnosticsPopup = true
+        runDiagnose()
+    }
+
     private func refreshLocalModels() {
         isLoadingLocalModels = true
         localModelsStatus = ""
@@ -980,16 +983,21 @@ struct SettingsView: View {
         isDiagnosing = false
         diagnoseResult = ""
         diagnoseStatus = ""
+        showsDiagnosticsPopup = false
     }
 
     private var canSaveAPIProfile: Bool {
-        let values = [
-            settings.aiAPIEndpoint,
-            settings.aiAPIModel,
-            settings.aiApiKey,
-            apiProfileNameDraft
-        ]
-        return values.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let trimmedName = apiProfileNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedName.isEmpty {
+            return true
+        }
+        switch settings.aiAPIRequestStyleEnum {
+        case .standard:
+            let values = [settings.aiAPIEndpoint, settings.aiAPIModel, settings.aiApiKey]
+            return values.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        case .json:
+            return !settings.aiAPIAdvancedJSONConfiguration.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
     }
 
     private func syncAPIProfileDraft() {
@@ -1045,20 +1053,30 @@ struct SettingsView: View {
         advancedJSONStatus = "Formatted advanced JSON."
     }
 
+    private func profileMenuTitle(for profile: AIAPIProfile) -> String {
+        "\(profile.name) • \(profile.requestStyle.displayName)"
+    }
+
+    private func copyDiagnosticsToPasteboard() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(diagnosticsTranscript, forType: .string)
+    }
+
+    private var diagnosticsTranscript: String {
+        let trimmedStatus = diagnoseStatus.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedResult = diagnoseResult.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedStatus.isEmpty && trimmedResult.isEmpty {
+            return "Run a test to inspect the active AI configuration."
+        }
+        return [trimmedStatus.isEmpty ? nil : "Status: \(trimmedStatus)", trimmedResult.isEmpty ? nil : trimmedResult]
+            .compactMap { $0 }
+            .joined(separator: "\n\n")
+    }
+
     private let hotkeyKeys: [(Int, String)] = SettingsManager.hotkeyKeyNames
         .map { ($0.key, $0.value) }
         .sorted { $0.1 < $1.1 }
-
-    private var aiSettingsIntroText: String {
-        switch settings.aiModeEnum {
-        case .local:
-            return "Choose one provider path at a time and keep its fields separate."
-        case .api where settings.aiAPIRequestStyleEnum == .json:
-            return "JSON mode bypasses the built-in provider mapping so you can paste the exact request shape you want."
-        case .api:
-            return "Standard mode keeps the guided endpoint, header, key, and model fields."
-        }
-    }
 
     private var diagnosticsSubtitleText: String {
         switch settings.aiModeEnum {
@@ -1069,6 +1087,114 @@ struct SettingsView: View {
         case .api:
             return "Sends a real provider-aware API request using the active endpoint, header, and model."
         }
+    }
+}
+
+private struct AIDiagnosticsPopup: View {
+    let title: String
+    let subtitle: String
+    let status: String
+    let result: String
+    let isDiagnosing: Bool
+    let isDarkMode: Bool
+    let onCopy: () -> Void
+    let onClose: () -> Void
+
+    private var primaryTextColor: Color {
+        isDarkMode ? .white.opacity(0.95) : .black.opacity(0.84)
+    }
+
+    private var secondaryTextColor: Color {
+        isDarkMode ? .white.opacity(0.62) : .black.opacity(0.55)
+    }
+
+    private var fieldFill: Color {
+        isDarkMode ? .white.opacity(0.05) : .white.opacity(0.88)
+    }
+
+    private var outlineColor: Color {
+        isDarkMode ? .white.opacity(0.09) : .black.opacity(0.08)
+    }
+
+    private var displayedText: String {
+        let trimmedStatus = status.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedResult = result.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedStatus.isEmpty && trimmedResult.isEmpty {
+            return "Waiting to run the AI connection test."
+        }
+        return [trimmedStatus.isEmpty ? nil : "Status: \(trimmedStatus)", trimmedResult.isEmpty ? nil : trimmedResult]
+            .compactMap { $0 }
+            .joined(separator: "\n\n")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(primaryTextColor)
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(secondaryTextColor)
+                }
+
+                Spacer(minLength: 8)
+
+                Button("Close", action: onClose)
+                    .buttonStyle(SettingsPillButtonStyle(
+                        isDarkMode: isDarkMode,
+                        tone: .neutral,
+                        isSelected: false,
+                        compact: true
+                    ))
+            }
+
+            HStack(spacing: 6) {
+                if isDiagnosing {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Text(isDiagnosing ? "Testing active AI configuration..." : (status.isEmpty ? "Idle" : status))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(secondaryTextColor)
+            }
+
+            ScrollView {
+                Text(displayedText)
+                    .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(primaryTextColor)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+            }
+            .frame(width: 460, height: 220)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(fieldFill)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(outlineColor, lineWidth: 1)
+            )
+
+            HStack(spacing: 6) {
+                Button("Copy Result", action: onCopy)
+                    .buttonStyle(SettingsPillButtonStyle(
+                        isDarkMode: isDarkMode,
+                        tone: .accent,
+                        isSelected: false
+                    ))
+
+                Spacer()
+            }
+        }
+        .padding(14)
+        .frame(minWidth: 500, minHeight: 330)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(isDarkMode ? Color(white: 0.12) : Color(white: 0.98))
+        )
     }
 }
 
@@ -1102,11 +1228,11 @@ private struct SettingsPillButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: compact ? 11 : 11.5, weight: .semibold))
+            .font(.system(size: compact ? 10.5 : 11, weight: .semibold))
             .foregroundStyle(foregroundColor(configuration: configuration))
-            .padding(.horizontal, compact ? 10 : 12)
-            .padding(.vertical, compact ? 6 : 7)
-            .frame(minHeight: compact ? 0 : 32)
+            .padding(.horizontal, compact ? 9 : 10)
+            .padding(.vertical, compact ? 5 : 6)
+            .frame(minHeight: compact ? 0 : 29)
             .background(
                 Capsule()
                     .fill(backgroundColor(configuration: configuration))

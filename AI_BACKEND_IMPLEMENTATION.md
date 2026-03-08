@@ -221,10 +221,12 @@ Typical providers:
 - Saved API settings are full profiles, not just model aliases.
 - A saved profile includes:
   - display name
+  - request style
   - endpoint
   - API key
   - header name
   - model
+  - advanced JSON configuration
 - Selecting a saved profile must load the full API configuration into the active API fields.
 - Keep explicit save/update/delete actions so switching profiles does not silently overwrite another saved setup.
 

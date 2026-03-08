@@ -74,25 +74,68 @@ enum APIRequestStyle: String, CaseIterable {
 struct AIAPIProfile: Identifiable, Codable, Equatable {
     var id: String
     var name: String
+    var requestStyle: APIRequestStyle
     var endpoint: String
     var apiKey: String
     var headerName: String
     var model: String
+    var advancedJSONConfiguration: String
 
     init(
         id: String = UUID().uuidString,
         name: String,
+        requestStyle: APIRequestStyle = .standard,
         endpoint: String,
         apiKey: String,
         headerName: String,
-        model: String
+        model: String,
+        advancedJSONConfiguration: String = ""
     ) {
         self.id = id
         self.name = name
+        self.requestStyle = requestStyle
         self.endpoint = endpoint
         self.apiKey = apiKey
         self.headerName = headerName
         self.model = model
+        self.advancedJSONConfiguration = advancedJSONConfiguration
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case requestStyle
+        case endpoint
+        case apiKey
+        case headerName
+        case model
+        case advancedJSONConfiguration
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        name = try container.decode(String.self, forKey: .name)
+        let rawRequestStyle = try container.decodeIfPresent(String.self, forKey: .requestStyle)
+            ?? APIRequestStyle.standard.rawValue
+        requestStyle = APIRequestStyle(rawValue: rawRequestStyle) ?? .standard
+        endpoint = try container.decodeIfPresent(String.self, forKey: .endpoint) ?? ""
+        apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
+        headerName = try container.decodeIfPresent(String.self, forKey: .headerName) ?? "Authorization"
+        model = try container.decodeIfPresent(String.self, forKey: .model) ?? ""
+        advancedJSONConfiguration = try container.decodeIfPresent(String.self, forKey: .advancedJSONConfiguration) ?? ""
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(requestStyle.rawValue, forKey: .requestStyle)
+        try container.encode(endpoint, forKey: .endpoint)
+        try container.encode(apiKey, forKey: .apiKey)
+        try container.encode(headerName, forKey: .headerName)
+        try container.encode(model, forKey: .model)
+        try container.encode(advancedJSONConfiguration, forKey: .advancedJSONConfiguration)
     }
 }
 
@@ -408,7 +451,7 @@ class SettingsManager: ObservableObject {
     }
 
     func suggestedAPIProfileName() -> String {
-        let trimmedModel = aiAPIModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedModel = currentAIModel.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedModel.isEmpty {
             return trimmedModel
         }
@@ -422,10 +465,12 @@ class SettingsManager: ObservableObject {
     func saveCurrentAPIProfile(named preferredName: String?) -> AIAPIProfile {
         let profile = AIAPIProfile(
             name: normalizedAPIProfileName(preferredName),
+            requestStyle: aiAPIRequestStyleEnum,
             endpoint: aiAPIEndpoint.trimmingCharacters(in: .whitespacesAndNewlines),
             apiKey: aiApiKey.trimmingCharacters(in: .whitespacesAndNewlines),
             headerName: normalizedAPIHeaderName(aiAPIHeaderName),
-            model: aiAPIModel.trimmingCharacters(in: .whitespacesAndNewlines)
+            model: aiAPIModel.trimmingCharacters(in: .whitespacesAndNewlines),
+            advancedJSONConfiguration: aiAPIAdvancedJSONConfiguration
         )
         var profiles = aiAPISavedProfiles
         profiles.append(profile)
@@ -438,10 +483,12 @@ class SettingsManager: ObservableObject {
     func applyAPIProfile(id: String) -> Bool {
         guard let profile = aiAPISavedProfiles.first(where: { $0.id == id }) else { return false }
         aiAPISelectedProfileID = profile.id
+        aiAPIRequestStyleEnum = profile.requestStyle
         aiAPIEndpoint = profile.endpoint
         aiApiKey = profile.apiKey
         aiAPIHeaderName = profile.headerName
         aiAPIModel = profile.model
+        aiAPIAdvancedJSONConfiguration = profile.advancedJSONConfiguration
         return true
     }
 
@@ -456,10 +503,12 @@ class SettingsManager: ObservableObject {
         profiles[index] = AIAPIProfile(
             id: selectedID,
             name: normalizedAPIProfileName(preferredName),
+            requestStyle: aiAPIRequestStyleEnum,
             endpoint: aiAPIEndpoint.trimmingCharacters(in: .whitespacesAndNewlines),
             apiKey: aiApiKey.trimmingCharacters(in: .whitespacesAndNewlines),
             headerName: normalizedAPIHeaderName(aiAPIHeaderName),
-            model: aiAPIModel.trimmingCharacters(in: .whitespacesAndNewlines)
+            model: aiAPIModel.trimmingCharacters(in: .whitespacesAndNewlines),
+            advancedJSONConfiguration: aiAPIAdvancedJSONConfiguration
         )
         aiAPISavedProfiles = profiles
         aiAPISelectedProfileID = selectedID

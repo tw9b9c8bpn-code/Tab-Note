@@ -1924,6 +1924,152 @@ private struct InlineCursorAnswerPopoverView: View {
         let estimatedCost: Double
     }
 
+    fileprivate struct PricingReferenceModel: Identifiable {
+        let label: String
+        let outputRatePerMillion: Double
+        let aliases: [String]
+
+        var id: String { label }
+
+        func matches(_ lowercasedModelName: String) -> Bool {
+            aliases.contains { lowercasedModelName.contains($0) }
+        }
+    }
+
+    fileprivate struct PricingReferenceSection: Identifiable {
+        let title: String
+        let models: [PricingReferenceModel]
+
+        var id: String { title }
+    }
+
+    fileprivate struct PricingPopoverRow: Identifiable {
+        let label: String
+        let cost: Double
+        let isActive: Bool
+
+        var id: String { label }
+    }
+
+    fileprivate struct PricingPopoverSection: Identifiable {
+        let title: String
+        let rows: [PricingPopoverRow]
+
+        var id: String { title }
+    }
+
+    private static let pricingReferenceSections: [PricingReferenceSection] = [
+        PricingReferenceSection(
+            title: "OpenAI",
+            models: [
+                PricingReferenceModel(label: "GPT-5.4", outputRatePerMillion: 15.0, aliases: ["gpt-5.4"]),
+                PricingReferenceModel(label: "GPT-5.4 Pro", outputRatePerMillion: 180.0, aliases: ["gpt-5.4 pro", "gpt-5.4-pro"]),
+                PricingReferenceModel(label: "GPT-5.2", outputRatePerMillion: 14.0, aliases: ["gpt-5.2"]),
+                PricingReferenceModel(label: "GPT-5.2 Pro", outputRatePerMillion: 168.0, aliases: ["gpt-5.2 pro", "gpt-5.2-pro"]),
+                PricingReferenceModel(label: "GPT-5.1", outputRatePerMillion: 10.0, aliases: ["gpt-5.1"]),
+                PricingReferenceModel(label: "GPT-5 mini", outputRatePerMillion: 0.60, aliases: ["gpt-5 mini", "gpt-5-mini"]),
+                PricingReferenceModel(label: "GPT-5 nano", outputRatePerMillion: 0.40, aliases: ["gpt-5 nano", "gpt-5-nano"]),
+                PricingReferenceModel(label: "GPT-4o", outputRatePerMillion: 10.0, aliases: ["gpt-4o"]),
+                PricingReferenceModel(label: "GPT-4o mini", outputRatePerMillion: 0.60, aliases: ["gpt-4o mini", "gpt-4o-mini"]),
+                PricingReferenceModel(label: "o3 (reasoning)", outputRatePerMillion: 8.0, aliases: ["o3"]),
+                PricingReferenceModel(label: "o1", outputRatePerMillion: 60.0, aliases: ["o1"]),
+                PricingReferenceModel(label: "Codex mini", outputRatePerMillion: 6.0, aliases: ["codex-mini-latest", "codex-mini"])
+            ]
+        ),
+        PricingReferenceSection(
+            title: "Anthropic",
+            models: [
+                PricingReferenceModel(label: "Claude Opus 4.6", outputRatePerMillion: 25.0, aliases: ["claude opus 4.6", "claude-opus-4.6"]),
+                PricingReferenceModel(label: "Claude Sonnet 4.6", outputRatePerMillion: 15.0, aliases: ["claude sonnet 4.6", "claude-sonnet-4.6"]),
+                PricingReferenceModel(label: "Claude Haiku 4.5", outputRatePerMillion: 5.0, aliases: ["claude haiku 4.5", "claude-haiku-4.5"]),
+                PricingReferenceModel(label: "Claude Opus 4.5", outputRatePerMillion: 25.0, aliases: ["claude opus 4.5", "claude-opus-4.5"]),
+                PricingReferenceModel(label: "Claude Opus 4.1", outputRatePerMillion: 75.0, aliases: ["claude opus 4.1", "claude-opus-4.1"]),
+                PricingReferenceModel(label: "Claude Sonnet 4.x", outputRatePerMillion: 15.0, aliases: ["sonnet"]),
+                PricingReferenceModel(label: "Claude Opus 4.x", outputRatePerMillion: 25.0, aliases: ["opus"])
+            ]
+        ),
+        PricingReferenceSection(
+            title: "Google Gemini",
+            models: [
+                PricingReferenceModel(label: "Gemini 3.1 Pro", outputRatePerMillion: 12.0, aliases: ["gemini 3.1 pro", "gemini-3.1-pro"]),
+                PricingReferenceModel(label: "Gemini 3 Flash", outputRatePerMillion: 3.0, aliases: ["gemini 3 flash", "gemini-3-flash"]),
+                PricingReferenceModel(label: "Gemini 2.5 Pro", outputRatePerMillion: 10.0, aliases: ["gemini 2.5 pro", "gemini-2.5-pro"]),
+                PricingReferenceModel(label: "Gemini 2.5 Flash", outputRatePerMillion: 2.5, aliases: ["gemini 2.5 flash", "gemini-2.5-flash"]),
+                PricingReferenceModel(label: "Gemini Flash-Lite", outputRatePerMillion: 0.40, aliases: ["gemini flash-lite", "gemini-flash-lite", "gemini 2.5 flash-lite", "gemini-2.5-flash-lite"])
+            ]
+        ),
+        PricingReferenceSection(
+            title: "Mistral",
+            models: [
+                PricingReferenceModel(label: "Mistral Large 2", outputRatePerMillion: 6.0, aliases: ["mistral large 2", "mistral-large-2"]),
+                PricingReferenceModel(label: "Mistral Small 3.1", outputRatePerMillion: 0.11, aliases: ["mistral small 3.1", "mistral-small-3.1"]),
+                PricingReferenceModel(label: "Mistral Nemo", outputRatePerMillion: 0.04, aliases: ["mistral nemo", "mistral-nemo"]),
+                PricingReferenceModel(label: "Codestral", outputRatePerMillion: 0.90, aliases: ["codestral"]),
+                PricingReferenceModel(label: "Ministral 8B", outputRatePerMillion: 0.10, aliases: ["ministral 8b", "ministral-8b"])
+            ]
+        ),
+        PricingReferenceSection(
+            title: "Groq",
+            models: [
+                PricingReferenceModel(label: "Llama 3.1 8B", outputRatePerMillion: 0.08, aliases: ["llama 3.1 8b", "llama-3.1-8b", "llama3.1:8b"]),
+                PricingReferenceModel(label: "Llama 3.1 70B", outputRatePerMillion: 0.79, aliases: ["llama 3.1 70b", "llama-3.1-70b", "llama3.1:70b"]),
+                PricingReferenceModel(label: "Mixtral 8x7B", outputRatePerMillion: 0.27, aliases: ["mixtral 8x7b", "mixtral-8x7b"]),
+                PricingReferenceModel(label: "Gemma 7B", outputRatePerMillion: 0.10, aliases: ["gemma 7b", "gemma-7b"]),
+                PricingReferenceModel(label: "Llama 4 Scout (17B)", outputRatePerMillion: 0.34, aliases: ["llama 4 scout", "llama-4-scout", "scout-17b"])
+            ]
+        ),
+        PricingReferenceSection(
+            title: "xAI",
+            models: [
+                PricingReferenceModel(label: "Grok-4.1 Fast (Reasoning)", outputRatePerMillion: 0.50, aliases: ["grok-4.1 fast (reasoning)", "grok-4.1-fast-reasoning", "grok 4.1 fast reasoning"]),
+                PricingReferenceModel(label: "Grok-4.1 Fast", outputRatePerMillion: 0.50, aliases: ["grok-4.1 fast", "grok 4.1 fast"]),
+                PricingReferenceModel(label: "Grok-4 Fast", outputRatePerMillion: 0.50, aliases: ["grok-4 fast", "grok 4 fast"]),
+                PricingReferenceModel(label: "Grok-4", outputRatePerMillion: 15.0, aliases: ["grok-4", "grok 4"]),
+                PricingReferenceModel(label: "Grok-3", outputRatePerMillion: 10.0, aliases: ["grok-3", "grok 3"]),
+                PricingReferenceModel(label: "Grok-3 Mini", outputRatePerMillion: 0.50, aliases: ["grok-3 mini", "grok 3 mini"]),
+                PricingReferenceModel(label: "Grok Code Fast 1", outputRatePerMillion: 1.50, aliases: ["grok code fast 1", "grok-code-fast-1"])
+            ]
+        ),
+        PricingReferenceSection(
+            title: "DeepSeek",
+            models: [
+                PricingReferenceModel(label: "DeepSeek-V3.2 (Chat)", outputRatePerMillion: 0.42, aliases: ["deepseek-v3.2 chat", "deepseek v3.2 chat", "deepseek-chat", "deepseek-v3.2"]),
+                PricingReferenceModel(label: "DeepSeek-V3.2 (Reasoner)", outputRatePerMillion: 0.42, aliases: ["deepseek-v3.2 reasoner", "deepseek reasoner"]),
+                PricingReferenceModel(label: "DeepSeek-V3", outputRatePerMillion: 0.89, aliases: ["deepseek-v3", "deepseek v3"]),
+                PricingReferenceModel(label: "DeepSeek-R1", outputRatePerMillion: 2.18, aliases: ["deepseek-r1", "deepseek r1"]),
+                PricingReferenceModel(label: "DeepSeek V3 (Old)", outputRatePerMillion: 0.28, aliases: ["deepseek v3 old", "deepseek-v3-old"])
+            ]
+        ),
+        PricingReferenceSection(
+            title: "MiniMax",
+            models: [
+                PricingReferenceModel(label: "MiniMax M2.5", outputRatePerMillion: 1.20, aliases: ["minimax m2.5", "minimax-m2.5", "minimax-2.5"]),
+                PricingReferenceModel(label: "MiniMax M2.5 Lightning", outputRatePerMillion: 2.40, aliases: ["minimax m2.5 lightning", "minimax-m2.5-lightning"]),
+                PricingReferenceModel(label: "MiniMax M2.1", outputRatePerMillion: 0.95, aliases: ["minimax m2.1", "minimax-m2.1"]),
+                PricingReferenceModel(label: "MiniMax M2", outputRatePerMillion: 1.10, aliases: ["minimax m2", "minimax-m2"]),
+                PricingReferenceModel(label: "MiniMax M2-her", outputRatePerMillion: 1.20, aliases: ["minimax m2-her", "minimax-m2-her"]),
+                PricingReferenceModel(label: "MiniMax M1-80k", outputRatePerMillion: 2.20, aliases: ["minimax m1-80k", "minimax-m1-80k"])
+            ]
+        ),
+        PricingReferenceSection(
+            title: "Moonshot (Kimi)",
+            models: [
+                PricingReferenceModel(label: "Kimi K2.5", outputRatePerMillion: 3.0, aliases: ["kimi k2.5", "kimi-k2.5"]),
+                PricingReferenceModel(label: "Kimi K2 (Thinking)", outputRatePerMillion: 2.5, aliases: ["kimi k2 thinking", "kimi k2", "kimi-k2"]),
+                PricingReferenceModel(label: "Kimi K2 Turbo", outputRatePerMillion: 8.0, aliases: ["kimi k2 turbo", "kimi-k2-turbo"]),
+                PricingReferenceModel(label: "Kimi K2 0905", outputRatePerMillion: 2.5, aliases: ["kimi k2 0905", "kimi-k2-0905"]),
+                PricingReferenceModel(label: "Kimi K2 0711", outputRatePerMillion: 2.2, aliases: ["kimi k2 0711", "kimi-k2-0711"]),
+                PricingReferenceModel(label: "Kimi Latest", outputRatePerMillion: 5.0, aliases: ["kimi latest"])
+            ]
+        ),
+        PricingReferenceSection(
+            title: "Local",
+            models: [
+                PricingReferenceModel(label: "Ollama / Local Model", outputRatePerMillion: 0, aliases: ["ollama", "local"])
+            ]
+        )
+    ]
+
     static func preparedAnswerText(from raw: String) -> String {
         var text = strippingHiddenReasoning(from: raw)
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2445,25 +2591,38 @@ private struct InlineCursorAnswerPopoverView: View {
         return style
     }
 
+    private static func bestPricingReference(for model: String) -> PricingReferenceModel? {
+        let lower = model.lowercased()
+        var bestMatch: (length: Int, reference: PricingReferenceModel)?
+
+        for section in pricingReferenceSections {
+            for reference in section.models {
+                for alias in reference.aliases where lower.contains(alias) {
+                    if alias.count > (bestMatch?.length ?? 0) {
+                        bestMatch = (alias.count, reference)
+                    }
+                }
+            }
+        }
+
+        return bestMatch?.reference
+    }
+
     private static func estimatedOutputRatePerMillionTokens(for model: String) -> Double {
         let lower = model.lowercased()
-        if lower.contains("ollama") || lower.contains("local") { return 0 }
-        if lower.contains("opus") { return 25.0 }
-        if lower.contains("sonnet") { return 15.0 }
-        if lower.contains("haiku") { return 5.0 }
-        if lower.contains("gpt-5 pro") || lower.contains("gpt-5-pro") { return 120.0 }
-        if lower.contains("gpt-5 nano") || lower.contains("gpt-5-nano") { return 0.40 }
-        if lower.contains("gpt-5 mini") || lower.contains("gpt-5-mini") { return 2.0 }
-        if lower.contains("codex-mini-latest") { return 6.0 }
-        if lower.contains("codex-mini") { return 6.0 }
-        if lower.contains("codex") || lower.contains("gpt-5") || lower.contains("gpt-4.1") || lower.contains("gpt-4o") {
-            return 10.0
+        if let reference = bestPricingReference(for: lower) {
+            return reference.outputRatePerMillion
         }
-        if lower.contains("grok") { return 15.0 }
+        if lower.contains("ollama") || lower.contains("local") { return 0 }
+        if lower.contains("gpt") || lower.contains("codex") { return 10.0 }
+        if lower.contains("claude") || lower.contains("sonnet") { return 15.0 }
+        if lower.contains("opus") { return 25.0 }
+        if lower.contains("haiku") { return 5.0 }
+        if lower.contains("grok") { return 10.0 }
         if lower.contains("deepseek") { return 0.42 }
-        if lower.contains("minimax m2.5") || lower.contains("minimax-m2.5") { return 1.20 }
         if lower.contains("minimax") { return 1.10 }
         if lower.contains("gemini") { return 10.0 }
+        if lower.contains("kimi") { return 3.0 }
         return 1.0
     }
 
@@ -2516,18 +2675,31 @@ private struct InlineCursorAnswerPopoverView: View {
         !model.rawAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private var pricingRows: [(label: String, cost: Double, isActive: Bool)] {
-        [
-            ("Current: \(activeModelLabel)", metrics.estimatedCost, true),
-            ("Claude Sonnet 4.x", costForTokens(ratePerMillion: 15.0), false),
-            ("Claude Opus 4.x", costForTokens(ratePerMillion: 25.0), false),
-            ("GPT / Codex flagship", costForTokens(ratePerMillion: 10.0), false),
-            ("GPT / Codex mini", costForTokens(ratePerMillion: 2.0), false),
-            ("Grok", costForTokens(ratePerMillion: 15.0), false),
-            ("DeepSeek", costForTokens(ratePerMillion: 0.42), false),
-            ("MiniMax M2.5", costForTokens(ratePerMillion: 1.20), false),
-            ("Local", 0, false)
+    private var pricingSections: [PricingPopoverSection] {
+        let activeReferenceLabel = Self.bestPricingReference(for: activeModelLabel)?.label
+        var sections = [
+            PricingPopoverSection(
+                title: "Current",
+                rows: [
+                    PricingPopoverRow(label: activeModelLabel, cost: metrics.estimatedCost, isActive: true)
+                ]
+            )
         ]
+
+        sections.append(contentsOf: Self.pricingReferenceSections.map { section in
+            PricingPopoverSection(
+                title: section.title,
+                rows: section.models.map { reference in
+                    PricingPopoverRow(
+                        label: reference.label,
+                        cost: costForTokens(ratePerMillion: reference.outputRatePerMillion),
+                        isActive: reference.label == activeReferenceLabel
+                    )
+                }
+            )
+        })
+
+        return sections
     }
 
     private var activeModelLabel: String {
@@ -2814,7 +2986,7 @@ private struct InlineCursorAnswerPopoverView: View {
                         .popover(isPresented: $showPricingPopover, arrowEdge: .top) {
                             PricingBreakdownPopover(
                                 tokenCount: metrics.tokens,
-                                rows: pricingRows,
+                                sections: pricingSections,
                                 isDarkMode: settings.isDarkMode
                             )
                         }
@@ -3011,7 +3183,7 @@ private struct ThoughtStatusText: View {
 
 private struct PricingBreakdownPopover: View {
     let tokenCount: Int
-    let rows: [(label: String, cost: Double, isActive: Bool)]
+    let sections: [InlineCursorAnswerPopoverView.PricingPopoverSection]
     let isDarkMode: Bool
 
     private var background: Color {
@@ -3028,17 +3200,30 @@ private struct PricingBreakdownPopover: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(isDarkMode ? Color.white.opacity(0.9) : Color.black.opacity(0.82))
 
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                HStack(spacing: 10) {
-                    Text(row.label)
-                        .font(.system(size: 10.5, weight: row.isActive ? .semibold : .regular))
-                        .foregroundStyle(row.isActive ? (isDarkMode ? Color.white.opacity(0.92) : Color.black.opacity(0.86)) : (isDarkMode ? Color.white.opacity(0.72) : Color.black.opacity(0.68)))
-                    Spacer(minLength: 12)
-                    Text(InlineCursorAnswerPopoverView.formattedCost(row.cost))
-                        .font(.system(size: 10.5, weight: row.isActive ? .semibold : .medium, design: .monospaced))
-                        .foregroundStyle(row.isActive ? (isDarkMode ? Color.white.opacity(0.92) : Color.black.opacity(0.86)) : (isDarkMode ? Color.white.opacity(0.72) : Color.black.opacity(0.68)))
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(sections) { section in
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(section.title.uppercased())
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(isDarkMode ? Color.white.opacity(0.45) : Color.black.opacity(0.44))
+
+                            ForEach(section.rows) { row in
+                                HStack(spacing: 10) {
+                                    Text(row.label)
+                                        .font(.system(size: 10.5, weight: row.isActive ? .semibold : .regular))
+                                        .foregroundStyle(row.isActive ? (isDarkMode ? Color.white.opacity(0.92) : Color.black.opacity(0.86)) : (isDarkMode ? Color.white.opacity(0.72) : Color.black.opacity(0.68)))
+                                    Spacer(minLength: 12)
+                                    Text(InlineCursorAnswerPopoverView.formattedCost(row.cost))
+                                        .font(.system(size: 10.5, weight: row.isActive ? .semibold : .medium, design: .monospaced))
+                                        .foregroundStyle(row.isActive ? (isDarkMode ? Color.white.opacity(0.92) : Color.black.opacity(0.86)) : (isDarkMode ? Color.white.opacity(0.72) : Color.black.opacity(0.68)))
+                                }
+                            }
+                        }
+                    }
                 }
             }
+            .frame(maxHeight: 340)
 
             Text("Heuristic output-only estimate. Real billed usage depends on provider, model, prompt tokens, caching, and routing.")
                 .font(.system(size: 9))
@@ -3046,7 +3231,7 @@ private struct PricingBreakdownPopover: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(12)
-        .frame(width: 250, alignment: .leading)
+        .frame(width: 320, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(background)
