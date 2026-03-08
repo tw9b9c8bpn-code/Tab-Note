@@ -456,6 +456,18 @@ class SettingsManager: ObservableObject {
         return normalized.isEmpty ? nil : normalized
     }
 
+    private func extractedEndpoint(fromAdvancedJSONConfiguration rawConfiguration: String) -> String? {
+        let trimmed = rawConfiguration.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let data = trimmed.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) as? [String: Any],
+              let endpoint = json["endpoint"] as? String else {
+            return nil
+        }
+        let normalized = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
+    }
+
     func resetAIPromptSelection() {
         aiPromptSelection = promptInjectionConfiguration.defaultSelection
     }
@@ -604,13 +616,26 @@ class SettingsManager: ObservableObject {
     }
 
     private func currentAPIProfileDraft(named preferredName: String?) -> AIAPIProfile {
-        AIAPIProfile(
+        let resolvedEndpoint: String
+        let resolvedModel: String
+
+        if aiAPIRequestStyleEnum == .json {
+            resolvedEndpoint = extractedEndpoint(fromAdvancedJSONConfiguration: aiAPIAdvancedJSONConfiguration)
+                ?? aiAPIEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+            resolvedModel = extractedModelName(fromAdvancedJSONConfiguration: aiAPIAdvancedJSONConfiguration)
+                ?? aiAPIModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            resolvedEndpoint = aiAPIEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+            resolvedModel = aiAPIModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return AIAPIProfile(
             name: normalizedAPIProfileName(preferredName),
             requestStyle: aiAPIRequestStyleEnum,
-            endpoint: aiAPIEndpoint.trimmingCharacters(in: .whitespacesAndNewlines),
+            endpoint: resolvedEndpoint,
             apiKey: aiApiKey.trimmingCharacters(in: .whitespacesAndNewlines),
             headerName: normalizedAPIHeaderName(aiAPIHeaderName),
-            model: aiAPIModel.trimmingCharacters(in: .whitespacesAndNewlines),
+            model: resolvedModel,
             advancedJSONConfiguration: aiAPIAdvancedJSONConfiguration
         )
     }

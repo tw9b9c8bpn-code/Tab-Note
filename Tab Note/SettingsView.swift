@@ -206,7 +206,8 @@ struct SettingsView: View {
             .buttonStyle(SettingsPillButtonStyle(
                 isDarkMode: settings.isDarkMode,
                 tone: .accent,
-                isSelected: selectedTab == .deletedNotes
+                isSelected: selectedTab == .deletedNotes,
+                minimumHeight: 36
             ))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1232,9 +1233,10 @@ struct SettingsView: View {
                 .buttonStyle(.plain)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(isSelected ? Color.white : primaryTextColor.opacity(0.88))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-                .frame(minHeight: 30)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 9)
+                .frame(minHeight: 36)
+                .contentShape(Rectangle())
                 .background(
                     segmentBackground(
                         isSelected: isSelected,
@@ -1864,6 +1866,7 @@ private struct SettingsPillButtonStyle: ButtonStyle {
     let tone: Tone
     let isSelected: Bool
     var compact: Bool = false
+    var minimumHeight: CGFloat? = nil
 
     private var accentFill: Color {
         isDarkMode ? Color(red: 0.89, green: 0.49, blue: 0.18) : Color(red: 0.90, green: 0.50, blue: 0.16)
@@ -1887,7 +1890,7 @@ private struct SettingsPillButtonStyle: ButtonStyle {
             .foregroundStyle(foregroundColor(configuration: configuration))
             .padding(.horizontal, compact ? 9 : 10)
             .padding(.vertical, compact ? 5 : 6)
-            .frame(minHeight: compact ? 0 : 29)
+            .frame(minHeight: compact ? 0 : (minimumHeight ?? 29))
             .background(
                 Capsule()
                     .fill(backgroundColor(configuration: configuration))

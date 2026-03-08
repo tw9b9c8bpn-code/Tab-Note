@@ -174,25 +174,7 @@ struct FootnoteBarView: View {
 
     private var modelQuickPicker: some View {
         Button(action: toggleModelPickerPopover) {
-            HStack(spacing: 4) {
-                Text(activeModelPickerTitle)
-                    .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 6.5, weight: .semibold))
-            }
-            .font(.system(size: 7.5, weight: .medium))
-            .foregroundColor(settings.isDarkMode ? .white.opacity(0.68) : .black.opacity(0.62))
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .frame(maxWidth: 92)
-            .background(
-                Capsule()
-                    .fill(settings.isDarkMode ? .white.opacity(0.06) : .black.opacity(0.05))
-            )
-            .overlay(
-                Capsule()
-                    .stroke(settings.isDarkMode ? .white.opacity(0.08) : .black.opacity(0.08), lineWidth: 1)
-            )
+            matrixMenuIcon(symbol: "cpu", isActive: true)
         }
         .buttonStyle(.plain)
         .help("Active model: \(activeModelPickerTooltip)")
@@ -257,7 +239,11 @@ struct FootnoteBarView: View {
                 }
                 .padding(8)
             }
-            .frame(width: 230, height: 240)
+            .scrollIndicators(.never)
+            .frame(
+                width: adaptivePopoverWidth(for: modelPickerTitles, minimum: 120, maximum: 260),
+                height: adaptivePopoverHeight(for: modelPickerTitles.count + 4, minimum: 120, maximum: 250)
+            )
         }
     }
 
@@ -316,7 +302,11 @@ struct FootnoteBarView: View {
                 }
                 .padding(8)
             }
-            .frame(width: 220, height: 190)
+            .scrollIndicators(.never)
+            .frame(
+                width: adaptivePopoverWidth(for: responseModeTitles, minimum: 120, maximum: 240),
+                height: adaptivePopoverHeight(for: responseModeTitles.count, minimum: 90, maximum: 220)
+            )
         }
     }
 
@@ -358,7 +348,11 @@ struct FootnoteBarView: View {
                 }
                 .padding(8)
             }
-            .frame(width: 230, height: 240)
+            .scrollIndicators(.never)
+            .frame(
+                width: adaptivePopoverWidth(for: expertModeTitles, minimum: 120, maximum: 240),
+                height: adaptivePopoverHeight(for: expertModeTitles.count, minimum: 90, maximum: 250)
+            )
         }
     }
 
@@ -400,7 +394,11 @@ struct FootnoteBarView: View {
                 }
                 .padding(8)
             }
-            .frame(width: 230, height: 240)
+            .scrollIndicators(.never)
+            .frame(
+                width: adaptivePopoverWidth(for: voiceModeTitles, minimum: 120, maximum: 240),
+                height: adaptivePopoverHeight(for: voiceModeTitles.count, minimum: 90, maximum: 250)
+            )
         }
     }
 
@@ -424,6 +422,49 @@ struct FootnoteBarView: View {
             .font(.system(size: 8, weight: .semibold))
             .foregroundColor(.secondary)
             .padding(.horizontal, 4)
+    }
+
+    private var responseModeTitles: [String] {
+        ["None"] + promptConfig.responseModeOptions.map {
+            promptConfig.responseModeMenuLabel(for: $0.id)
+        }
+    }
+
+    private var expertModeTitles: [String] {
+        ["None"] + promptConfig.expertModeOptions.map {
+            promptConfig.expertModeMenuLabel(for: $0.id)
+        }
+    }
+
+    private var voiceModeTitles: [String] {
+        ["None"] + promptConfig.voiceModeOptions.map {
+            promptConfig.voiceModeMenuLabel(for: $0.id)
+        }
+    }
+
+    private var modelPickerTitles: [String] {
+        let localTitles = settings.cachedLocalModelNames.isEmpty ? ["No local models cached yet"] : settings.cachedLocalModelNames
+        let apiTitles = settings.aiAPISavedProfiles.isEmpty ? ["No saved API models yet"] : settings.aiAPISavedProfiles.map(\.name)
+        return localTitles + apiTitles
+    }
+
+    private func adaptivePopoverWidth(
+        for titles: [String],
+        minimum: CGFloat,
+        maximum: CGFloat
+    ) -> CGFloat {
+        let longestCount = titles.map(\.count).max() ?? 0
+        let estimatedWidth = CGFloat(longestCount) * 6.1 + 48
+        return min(maximum, max(minimum, estimatedWidth))
+    }
+
+    private func adaptivePopoverHeight(
+        for rowCount: Int,
+        minimum: CGFloat,
+        maximum: CGFloat
+    ) -> CGFloat {
+        let estimatedHeight = CGFloat(max(rowCount, 1)) * 18 + 20
+        return min(maximum, max(minimum, estimatedHeight))
     }
 
     private func matrixMenuIcon(symbol: String, isActive: Bool) -> some View {
@@ -487,18 +528,6 @@ struct FootnoteBarView: View {
             showExpertModePopover = false
             showVoiceModePopover = false
         }
-    }
-
-    private var activeModelPickerTitle: String {
-        let rawTitle: String
-        switch settings.aiModeEnum {
-        case .local:
-            rawTitle = settings.aiLocalModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        case .api:
-            rawTitle = settings.aiSelectedAPIProfile?.name
-                ?? settings.currentAIModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return rawTitle.isEmpty ? "Model" : rawTitle
     }
 
     private var activeModelPickerTooltip: String {

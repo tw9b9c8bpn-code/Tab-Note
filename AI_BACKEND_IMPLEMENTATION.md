@@ -39,6 +39,7 @@ This document exists because the AI backend went through several incorrect itera
 - JSON mode should still surface the real model name from `body.model` for inline metrics; using a placeholder label like `Custom JSON` hides pricing/routing context and makes speed-cost debugging misleading.
 - Inline popup markdown rendering should stay active during streaming, not only after completion, or providers that emit bold Markdown incrementally will look visually downgraded compared with the standard adapters.
 - Saved API profiles are name-sensitive. If the user tests with a new configuration name that does not already exist, save a new preset instead of overwriting the currently selected preset.
+- JSON-mode saved profiles must persist their own endpoint/model derived from the JSON config, not stale values left over from the Standard API form.
 - Cached local model names must live outside the settings view so Saved, the footnote quick picker, and busy-model routing all see the same local-model roster.
 - When the active model in a mode is already busy, new inline requests should try the next saved model in that same mode group before reusing the busy one. Replays and follow-ups should stay on the same model.
 
@@ -85,6 +86,19 @@ Current rule:
   - `response.text_path: choices.0.message.content`
   - `streaming.text_path: choices.0.delta.content`
 - If using OpenRouter's speed-oriented routing, prefer the `:nitro` variant on the chosen model rather than inventing a Responses-style payload.
+
+### Iteration 11: Saving JSON presets with stale Standard fields
+
+Wrong assumption:
+- A JSON-mode saved preset could keep using the current Standard API endpoint/model fields for its summary metadata because the real request lived inside `advancedJSONConfiguration`.
+
+Why it failed:
+- Editing a Standard preset, switching to JSON, and testing a new provider made the saved preset look like the old provider/model even though the JSON body was different.
+- That made Saved and quick model switching confusing because the label metadata no longer matched the actual request.
+
+Current rule:
+- When request style is JSON, derive saved preset endpoint from the JSON `endpoint` and model from JSON `body.model` whenever available.
+- Only fall back to Standard fields when the JSON config does not provide them.
 
 ### Iteration 1: Shared Local/API fields
 

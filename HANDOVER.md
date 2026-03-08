@@ -1,5 +1,29 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-08, JSON preset metadata cleanup + compact icon-only model picker)
+- Reworked JSON/API saved-preset draft persistence in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsManager.swift`
+- Reworked segmented-tab hit areas in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`
+- Reworked footnote dropdown chrome and popover sizing in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/FootnoteBarView.swift`
+- Updated backend documentation in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/AI_BACKEND_IMPLEMENTATION.md`
+- Behavior changes:
+  - JSON-mode saved presets now store endpoint/model metadata derived from the JSON config itself, so an OpenRouter JSON preset no longer inherits stale Standard-mode labels like MiniMax
+  - top segmented tabs (`General` / `AI`, and `Local` / `API` / `Saved`) now have a larger hit area without making the whole settings view airy again
+  - the footnote quick model picker is now a single AI icon button instead of a text button
+  - the quick model / response mode / expert mode / voice mode popovers now size to their content more tightly and hide scroll bars for a cleaner look
+- Preferences / dislikes reinforced from user feedback:
+  - wants JSON presets to read as their real provider/model, not mixed with stale Standard API metadata
+  - wants footnote model switching to be icon-first and compact, not a text-heavy control
+  - wants segmented tabs easier to click without returning to loose, over-spaced settings chrome
+  - dislikes fixed-width dropdown panels and visible scroll bars when the menu content is short
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had let JSON saved presets reuse stale Standard API endpoint/model metadata, which made OpenRouter JSON entries look like MiniMax even though the request body was correct.
+  - I had built the footnote model switcher as a text button, but the preference was an icon-only AI control.
+  - I had kept fixed-width dropdown panels and default scroll bar behavior, which made the compact control row feel bulkier than intended.
+
 ## Completed in this pass (2026-03-08, preset fork fix + busy-model spillover + footnote quick picker)
 - Reworked saved-preset persistence and local-model caching in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsManager.swift`
