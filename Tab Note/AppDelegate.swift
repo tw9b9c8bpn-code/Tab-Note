@@ -344,7 +344,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
 
         targetPanel.makeKeyAndOrderFront(nil)
         if windowID == NotesStore.mainWindowID {
-            InlineAnswerPanelController.shared.setTemporarilyHiddenByApp(false)
+            InlineAnswerPanelManager.shared.setTemporarilyHiddenByApp(false)
         }
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -360,7 +360,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
                 settingsPanel.orderOut(nil)
             }
         }
-        InlineAnswerPanelController.shared.setTemporarilyHiddenByApp(true)
+        InlineAnswerPanelManager.shared.setTemporarilyHiddenByApp(true)
     }
 
     private func showAllPanels() {
@@ -388,7 +388,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
             settingsPanel.makeKeyAndOrderFront(nil)
         }
 
-        InlineAnswerPanelController.shared.setTemporarilyHiddenByApp(false)
+        InlineAnswerPanelManager.shared.setTemporarilyHiddenByApp(false)
         NSApp.activate(ignoringOtherApps: true)
     }
 

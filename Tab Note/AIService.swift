@@ -17,7 +17,7 @@ class AIService {
     static let shared = AIService()
     private var currentTask: URLSessionDataTask?
     private var currentStreamingTask: Task<Void, Never>?
-    private init() {}
+    init() {}
 
     private enum APITransport {
         case openAICompatible

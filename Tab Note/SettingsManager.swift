@@ -462,16 +462,47 @@ class SettingsManager: ObservableObject {
         return "API Setup \(aiAPISavedProfiles.count + 1)"
     }
 
+    @discardableResult
+    func upsertCurrentAPIProfile(named preferredName: String?) -> AIAPIProfile {
+        let draft = currentAPIProfileDraft(named: preferredName)
+        var profiles = aiAPISavedProfiles
+
+        if let selectedID = aiAPISelectedProfileID,
+           let selectedIndex = profiles.firstIndex(where: { $0.id == selectedID }) {
+            let updated = profile(draft, withID: selectedID)
+            profiles[selectedIndex] = updated
+            aiAPISavedProfiles = profiles
+            aiAPISelectedProfileID = updated.id
+            return updated
+        }
+
+        if let matchingIndex = profiles.firstIndex(where: { apiProfile($0, matchesDraft: draft) }) {
+            let updated = profile(draft, withID: profiles[matchingIndex].id)
+            profiles[matchingIndex] = updated
+            aiAPISavedProfiles = profiles
+            aiAPISelectedProfileID = updated.id
+            return updated
+        }
+
+        if let matchingNameIndex = profiles.firstIndex(where: {
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                .caseInsensitiveCompare(draft.name.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame
+        }) {
+            let updated = profile(draft, withID: profiles[matchingNameIndex].id)
+            profiles[matchingNameIndex] = updated
+            aiAPISavedProfiles = profiles
+            aiAPISelectedProfileID = updated.id
+            return updated
+        }
+
+        profiles.append(draft)
+        aiAPISavedProfiles = profiles
+        aiAPISelectedProfileID = draft.id
+        return draft
+    }
+
     func saveCurrentAPIProfile(named preferredName: String?) -> AIAPIProfile {
-        let profile = AIAPIProfile(
-            name: normalizedAPIProfileName(preferredName),
-            requestStyle: aiAPIRequestStyleEnum,
-            endpoint: aiAPIEndpoint.trimmingCharacters(in: .whitespacesAndNewlines),
-            apiKey: aiApiKey.trimmingCharacters(in: .whitespacesAndNewlines),
-            headerName: normalizedAPIHeaderName(aiAPIHeaderName),
-            model: aiAPIModel.trimmingCharacters(in: .whitespacesAndNewlines),
-            advancedJSONConfiguration: aiAPIAdvancedJSONConfiguration
-        )
+        let profile = currentAPIProfileDraft(named: preferredName)
         var profiles = aiAPISavedProfiles
         profiles.append(profile)
         aiAPISavedProfiles = profiles
@@ -500,16 +531,7 @@ class SettingsManager: ObservableObject {
         }
 
         var profiles = aiAPISavedProfiles
-        profiles[index] = AIAPIProfile(
-            id: selectedID,
-            name: normalizedAPIProfileName(preferredName),
-            requestStyle: aiAPIRequestStyleEnum,
-            endpoint: aiAPIEndpoint.trimmingCharacters(in: .whitespacesAndNewlines),
-            apiKey: aiApiKey.trimmingCharacters(in: .whitespacesAndNewlines),
-            headerName: normalizedAPIHeaderName(aiAPIHeaderName),
-            model: aiAPIModel.trimmingCharacters(in: .whitespacesAndNewlines),
-            advancedJSONConfiguration: aiAPIAdvancedJSONConfiguration
-        )
+        profiles[index] = profile(currentAPIProfileDraft(named: preferredName), withID: selectedID)
         aiAPISavedProfiles = profiles
         aiAPISelectedProfileID = selectedID
         return profiles[index]
@@ -549,6 +571,44 @@ class SettingsManager: ObservableObject {
     private func normalizedAPIProfileName(_ preferredName: String?) -> String {
         let trimmed = preferredName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? suggestedAPIProfileName() : trimmed
+    }
+
+    private func currentAPIProfileDraft(named preferredName: String?) -> AIAPIProfile {
+        AIAPIProfile(
+            name: normalizedAPIProfileName(preferredName),
+            requestStyle: aiAPIRequestStyleEnum,
+            endpoint: aiAPIEndpoint.trimmingCharacters(in: .whitespacesAndNewlines),
+            apiKey: aiApiKey.trimmingCharacters(in: .whitespacesAndNewlines),
+            headerName: normalizedAPIHeaderName(aiAPIHeaderName),
+            model: aiAPIModel.trimmingCharacters(in: .whitespacesAndNewlines),
+            advancedJSONConfiguration: aiAPIAdvancedJSONConfiguration
+        )
+    }
+
+    private func profile(_ profile: AIAPIProfile, withID id: String) -> AIAPIProfile {
+        AIAPIProfile(
+            id: id,
+            name: profile.name,
+            requestStyle: profile.requestStyle,
+            endpoint: profile.endpoint,
+            apiKey: profile.apiKey,
+            headerName: profile.headerName,
+            model: profile.model,
+            advancedJSONConfiguration: profile.advancedJSONConfiguration
+        )
+    }
+
+    private func apiProfile(_ existing: AIAPIProfile, matchesDraft draft: AIAPIProfile) -> Bool {
+        existing.requestStyle == draft.requestStyle
+            && normalizedAPIValue(existing.endpoint) == normalizedAPIValue(draft.endpoint)
+            && normalizedAPIValue(existing.apiKey) == normalizedAPIValue(draft.apiKey)
+            && normalizedAPIValue(existing.headerName) == normalizedAPIValue(draft.headerName)
+            && normalizedAPIValue(existing.model) == normalizedAPIValue(draft.model)
+            && normalizedAPIValue(existing.advancedJSONConfiguration) == normalizedAPIValue(draft.advancedJSONConfiguration)
+    }
+
+    private func normalizedAPIValue(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func normalizedAPIHeaderName(_ value: String) -> String {

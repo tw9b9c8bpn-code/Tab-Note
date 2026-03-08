@@ -296,10 +296,10 @@ struct NoteEditorView: NSViewRepresentable {
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             guard !isProgrammaticUpdate else { return false }
-            if commandSelector == #selector(NSResponder.cancelOperation(_:)), AIService.shared.isRequestInFlight {
-                AIService.shared.cancelCurrentRequest()
+            if commandSelector == #selector(NSResponder.cancelOperation(_:)),
+               InlineAnswerPanelManager.shared.isAnyRequestInFlight {
+                InlineAnswerPanelManager.shared.cancelAllRequestsAndFinishStreaming()
                 Self.publishInlineAIStatus("Cancelled", inFlight: false, windowID: parent.windowID)
-                InlineAnswerPanelController.shared.finishStreaming()
                 return true
             }
             guard commandSelector == #selector(NSResponder.insertTab(_:)) else { return false }
@@ -337,10 +337,6 @@ struct NoteEditorView: NSViewRepresentable {
         }
 
         private func requestInlineAnswer(in textView: HighlightCapturingTextView, preferredLocation: Int? = nil) {
-            guard !AIService.shared.isRequestInFlight else {
-                Self.publishInlineAIStatus("AI is already answering...", inFlight: true, windowID: parent.windowID)
-                return
-            }
             guard let context = currentParagraphContext(in: textView) else {
                 Self.publishInlineAIStatus("No paragraph at cursor", inFlight: false, windowID: parent.windowID)
                 NSSound.beep()
@@ -543,7 +539,7 @@ class HighlightCapturingTextView: NSTextView {
 
     var onThemeSelected: ((String) -> Void)?
     var onRichTextChange: ((Data?) -> Void)?
-    private static let inlineAnswerController = InlineAnswerPanelController.shared
+    private static let inlineAnswerPanels = InlineAnswerPanelManager.shared
     private static let inlineAnswerMarkerPrefix = "tabnote-ai:"
 
     private struct InlineAnswerPayload: Codable {
@@ -656,7 +652,7 @@ class HighlightCapturingTextView: NSTextView {
         let maxLocation = max(0, (textView.string as NSString).length - 1)
         let anchorCharacterIndex = max(0, min(preferredLocation, maxLocation))
         let anchorRect = textView.screenRect(for: textView.characterRect(for: anchorCharacterIndex))
-        inlineAnswerController.startRequest(
+        inlineAnswerPanels.startRequest(
             sentence: sentence,
             requestWindowID: requestWindowID,
             options: options,
@@ -665,11 +661,11 @@ class HighlightCapturingTextView: NSTextView {
     }
 
     static func dismissSharedInlineAnswerPopover() {
-        inlineAnswerController.close()
+        inlineAnswerPanels.closeAll()
     }
 
     static func syncInlineAnswerPopoverAppearance(isDarkMode: Bool) {
-        inlineAnswerController.syncAppearance(isDarkMode: isDarkMode)
+        inlineAnswerPanels.syncAppearance(isDarkMode: isDarkMode)
     }
 
     func insertInlineAnswerMarkerAndShowPopover(
@@ -695,15 +691,15 @@ class HighlightCapturingTextView: NSTextView {
     }
 
     func dismissInlineAnswerPopover() {
-        Self.inlineAnswerController.close()
+        Self.inlineAnswerPanels.closeAll()
     }
 
     private func closeInlineAnswerPopover() {
-        Self.inlineAnswerController.close()
+        Self.inlineAnswerPanels.closeAll()
     }
 
     private func showInlineAnswerPopover(payload: InlineAnswerPayload, anchorCharacterIndex: Int) {
-        Self.inlineAnswerController.present(
+        Self.inlineAnswerPanels.present(
             answer: payload.answer,
             summaryChip: payload.summaryChip,
             aiMode: payload.aiMode,
@@ -824,7 +820,6 @@ class HighlightCapturingTextView: NSTextView {
         var range = NSRange(location: 0, length: 0)
         let link = storage.attribute(.link, at: charIndex, effectiveRange: &range)
         guard Self.inlineAnswerMarkerLinkString(from: link) != nil else { return }
-        closeInlineAnswerPopover()
         replaceAttributedRangeWithUndo(
             range: range,
             replacement: NSAttributedString(string: ""),
@@ -1462,17 +1457,14 @@ private final class InlineAnswerPanelModel: ObservableObject {
     }
 }
 
-final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
-    static let shared = InlineAnswerPanelController()
+final class InlineAnswerPanelManager {
+    static let shared = InlineAnswerPanelManager()
 
-    private let model = InlineAnswerPanelModel()
-    private var panel: ActivatingPanel?
-    private var anchorScreenRect: NSRect?
-    private var isSuppressed = false
-    private var activeRequestID = UUID()
-    private var fallbackAnswerBeforeRequest: String?
-    private var fallbackThoughtDurationBeforeRequest: TimeInterval?
-    private var isTemporarilyHiddenByApp = false
+    private var controllers: [UUID: InlineAnswerPanelController] = [:]
+
+    var isAnyRequestInFlight: Bool {
+        controllers.values.contains { $0.isRequestInFlight }
+    }
 
     func startRequest(
         sentence: String,
@@ -1481,8 +1473,95 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
         anchorScreenRect: NSRect?,
         useAnchor: Bool = true
     ) {
-        if AIService.shared.isRequestInFlight {
-            AIService.shared.cancelCurrentRequest()
+        let controller = makeController()
+        controller.startRequest(
+            sentence: sentence,
+            requestWindowID: requestWindowID,
+            options: options,
+            anchorScreenRect: anchorScreenRect,
+            useAnchor: useAnchor
+        )
+    }
+
+    func present(
+        answer: String,
+        summaryChip: String,
+        aiMode: AIMode,
+        model: String,
+        anchorScreenRect: NSRect
+    ) {
+        let controller = makeController()
+        controller.present(
+            answer: answer,
+            summaryChip: summaryChip,
+            aiMode: aiMode,
+            model: model,
+            anchorScreenRect: anchorScreenRect
+        )
+    }
+
+    func closeAll() {
+        let activeControllers = Array(controllers.values)
+        activeControllers.forEach { $0.close() }
+    }
+
+    func cancelAllRequestsAndFinishStreaming() {
+        let activeControllers = Array(controllers.values)
+        activeControllers.forEach { $0.cancelRequestAndFinishStreaming() }
+    }
+
+    func syncAppearance(isDarkMode: Bool) {
+        let activeControllers = Array(controllers.values)
+        activeControllers.forEach { $0.syncAppearance(isDarkMode: isDarkMode) }
+    }
+
+    func setTemporarilyHiddenByApp(_ hidden: Bool) {
+        let activeControllers = Array(controllers.values)
+        activeControllers.forEach { $0.setTemporarilyHiddenByApp(hidden) }
+    }
+
+    private func makeController() -> InlineAnswerPanelController {
+        let controller = InlineAnswerPanelController { [weak self] id in
+            self?.controllers.removeValue(forKey: id)
+        }
+        controllers[controller.id] = controller
+        return controller
+    }
+}
+
+final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
+    let id = UUID()
+
+    private let model = InlineAnswerPanelModel()
+    private let aiService = AIService()
+    private var panel: ActivatingPanel?
+    private var anchorScreenRect: NSRect?
+    private var isSuppressed = false
+    private var activeRequestID = UUID()
+    private var fallbackAnswerBeforeRequest: String?
+    private var fallbackThoughtDurationBeforeRequest: TimeInterval?
+    private var isTemporarilyHiddenByApp = false
+    private var hasDisposed = false
+    private let onDispose: ((UUID) -> Void)?
+
+    init(onDispose: ((UUID) -> Void)? = nil) {
+        self.onDispose = onDispose
+        super.init()
+    }
+
+    var isRequestInFlight: Bool {
+        aiService.isRequestInFlight
+    }
+
+    func startRequest(
+        sentence: String,
+        requestWindowID: String,
+        options: AIService.InlineAnswerOptions,
+        anchorScreenRect: NSRect?,
+        useAnchor: Bool = true
+    ) {
+        if aiService.isRequestInFlight {
+            aiService.cancelCurrentRequest()
         }
 
         isSuppressed = false
@@ -1509,7 +1588,7 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
         presentPanel(useAnchor: useAnchor && !shouldKeepCurrentPanelPosition)
         postInlineAIStatus("Reading paragraph...", inFlight: true, windowID: requestWindowID)
 
-        AIService.shared.answerQuestionSentence(
+        aiService.answerQuestionSentence(
             sentence: sentence,
             options: options,
             onStatus: { [weak self] status in
@@ -1614,8 +1693,8 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
             return
         }
 
-        if AIService.shared.isRequestInFlight {
-            AIService.shared.cancelCurrentRequest()
+        if aiService.isRequestInFlight {
+            aiService.cancelCurrentRequest()
         }
 
         let requestWindowID = model.requestWindowID
@@ -1646,7 +1725,7 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
         presentPanel(useAnchor: false)
         postInlineAIStatus("Asking follow-up...", inFlight: true, windowID: requestWindowID)
 
-        AIService.shared.answerFollowUpQuestion(
+        aiService.answerFollowUpQuestion(
             question: trimmedQuestion,
             paragraphContext: model.sourceParagraph,
             previousAnswer: previousAnswer,
@@ -1710,17 +1789,25 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
         }
     }
 
+    func cancelRequestAndFinishStreaming() {
+        guard aiService.isRequestInFlight else { return }
+        activeRequestID = UUID()
+        aiService.cancelCurrentRequest()
+        finishStreaming()
+    }
+
     func close() {
+        aiService.cancelCurrentRequest()
         isSuppressed = true
         activeRequestID = UUID()
         isTemporarilyHiddenByApp = false
-        panel?.orderOut(nil)
-        panel?.close()
-        panel = nil
-        anchorScreenRect = nil
-        model.reset()
-        fallbackAnswerBeforeRequest = nil
-        fallbackThoughtDurationBeforeRequest = nil
+        if let panel {
+            panel.orderOut(nil)
+            panel.close()
+        } else {
+            cleanupClosedState()
+            disposeIfNeeded()
+        }
     }
 
     func syncAppearance(isDarkMode: Bool) {
@@ -1733,14 +1820,8 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         guard let closingWindow = notification.object as? NSWindow,
               closingWindow == panel else { return }
-        panel = nil
-        anchorScreenRect = nil
-        isSuppressed = true
-        isTemporarilyHiddenByApp = false
-        activeRequestID = UUID()
-        model.reset()
-        fallbackAnswerBeforeRequest = nil
-        fallbackThoughtDurationBeforeRequest = nil
+        cleanupClosedState()
+        disposeIfNeeded()
     }
 
     func setTemporarilyHiddenByApp(_ hidden: Bool) {
@@ -1767,6 +1848,23 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
         refreshPanelLayout(useAnchor: false)
     }
 
+    private func cleanupClosedState() {
+        panel = nil
+        anchorScreenRect = nil
+        isSuppressed = true
+        isTemporarilyHiddenByApp = false
+        activeRequestID = UUID()
+        model.reset()
+        fallbackAnswerBeforeRequest = nil
+        fallbackThoughtDurationBeforeRequest = nil
+    }
+
+    private func disposeIfNeeded() {
+        guard !hasDisposed else { return }
+        hasDisposed = true
+        onDispose?(id)
+    }
+
     private func presentPanel(useAnchor: Bool) {
         ensurePanel()
         syncAppearance(isDarkMode: SettingsManager.shared.isDarkMode)
@@ -1777,7 +1875,7 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
     private func ensurePanel() {
         guard panel == nil else { return }
 
-        let host = NSHostingController(rootView: InlineCursorAnswerPopoverView(model: model))
+        let host = NSHostingController(rootView: InlineCursorAnswerPopoverView(model: model, controller: self))
         let newPanel = ActivatingPanel(
             contentRect: NSRect(origin: .zero, size: model.contentSize),
             styleMask: [.borderless, .resizable, .fullSizeContentView],
@@ -1914,6 +2012,7 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
 private struct InlineCursorAnswerPopoverView: View {
     @ObservedObject private var settings = SettingsManager.shared
     @ObservedObject var model: InlineAnswerPanelModel
+    let controller: InlineAnswerPanelController
     @State private var showPricingPopover = false
     @State private var isCloseHovered = false
     @State private var followUpDraft = ""
@@ -2736,11 +2835,11 @@ private struct InlineCursorAnswerPopoverView: View {
     }
 
     private func closePanel() {
-        InlineAnswerPanelController.shared.close()
+        controller.close()
     }
 
     private func replayAnswer() {
-        InlineAnswerPanelController.shared.replayCurrentAnswer()
+        controller.replayCurrentAnswer()
     }
 
     private var summaryTextColor: Color {
@@ -2879,7 +2978,7 @@ private struct InlineCursorAnswerPopoverView: View {
     private func submitFollowUp() {
         let trimmed = followUpDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        InlineAnswerPanelController.shared.askFollowUp(trimmed)
+        controller.askFollowUp(trimmed)
         followUpDraft = ""
     }
 
@@ -3034,7 +3133,7 @@ private struct InlineCursorAnswerPopoverView: View {
             alignment: .topLeading
         )
         .onChange(of: settings.selectedFontEnum) { _, _ in
-            InlineAnswerPanelController.shared.refreshForCurrentStyle()
+            controller.refreshForCurrentStyle()
         }
     }
 }
@@ -3254,6 +3353,7 @@ private struct PricingBreakdownPopover: View {
                 }
             }
             .frame(maxHeight: 340)
+            .scrollIndicators(.never)
 
             Text("Heuristic output-only estimate. Real billed usage depends on provider, model, prompt tokens, caching, and routing.")
                 .font(.system(size: 9))

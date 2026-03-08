@@ -1,5 +1,33 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-08, segmented settings tabs + auto-save API test + multi AI popups)
+- Reworked settings layout and diagnostics flow in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`
+- Reworked API preset persistence/upsert behavior in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsManager.swift`
+- Reworked inline AI popup concurrency and per-panel request handling in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/NoteEditorView.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AppDelegate.swift`
+- Behavior changes:
+  - top-level settings tabs now separate `Deleted Notes` to the far right, while `General` and `AI` use a merged segmented capsule; the AI sub-tabs (`Local`, `API`, `Saved`) now also use one merged segmented control instead of separate pills
+  - Saved now renders local models and saved API presets side-by-side in two columns inside one shared container with a divider instead of stacked sections
+  - `Test All` now runs in the background without opening the diagnostics popup; each row only shows inline health icons, and failed rows expose their copyable details when the red `x` icon is clicked
+  - API now uses a single obvious `Test` action embedded inside the `Configuration Name` field; a successful API test automatically upserts the saved preset instead of requiring separate `Save Current` / `Update` buttons
+  - the global hotkey key picker now uses a higher-contrast field-style control so the active input affordance is easier to see
+  - the token-cost popup now hides the visible scroll bar while keeping the provider-grouped comparison list
+  - inline AI requests no longer share one singleton popup/request pipeline; each new question now gets its own controller, panel, and AI service instance so multiple AI popups can stream at the same time
+- Preferences / dislikes reinforced from user feedback:
+  - wants Saved to be the clear selector surface, but also wants it space-efficient and easier to scan in columns
+  - dislikes blocking diagnostics for batch testing and prefers inline failure affordances with drill-in details only when needed
+  - wants the API form reduced to one obvious path: enter config, hit `Test`, and let success save automatically
+  - wants segmented controls to read as a single control, not as three loosely related pill buttons
+  - wants concurrent AI popup windows for concurrent inline questions instead of one reused popup
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had kept `Test All` tied to the copyable popup model, but the user wanted batch validation to stay in the background and only surface failures per row on demand.
+  - I had treated API save/update as still useful explicit actions, but the user wanted testing to be the primary save trigger and the duplicate-management logic moved into the backend.
+  - I had preserved the old singleton inline-panel architecture too long, but that architecture fundamentally blocked multiple concurrent inline AI windows.
+
 ## Completed in this pass (2026-03-08, saved selector ownership + inline health states + cost ratio column)
 - Reworked local/API diagnostics access in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`

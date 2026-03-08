@@ -83,20 +83,30 @@ struct SettingsView: View {
                 .scrollIndicators(.never)
             }
             .padding(12)
+            
+            if showsDiagnosticsPopup {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        AIDiagnosticsPopup(
+                            title: diagnosticsPopupTitle.isEmpty ? aiDiagnosticsButtonTitle : diagnosticsPopupTitle,
+                            subtitle: diagnosticsPopupSubtitle.isEmpty ? diagnosticsSubtitleText : diagnosticsPopupSubtitle,
+                            status: diagnoseStatus,
+                            result: diagnoseResult,
+                            isDiagnosing: isDiagnosing,
+                            isDarkMode: settings.isDarkMode,
+                            onCopy: copyDiagnosticsToPasteboard,
+                            onClose: { showsDiagnosticsPopup = false }
+                        )
+                    }
+                    .padding(12)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                .zIndex(10)
+            }
         }
         .frame(minWidth: 560, minHeight: 520)
-        .sheet(isPresented: $showsDiagnosticsPopup) {
-            AIDiagnosticsPopup(
-                title: diagnosticsPopupTitle.isEmpty ? aiDiagnosticsButtonTitle : diagnosticsPopupTitle,
-                subtitle: diagnosticsPopupSubtitle.isEmpty ? diagnosticsSubtitleText : diagnosticsPopupSubtitle,
-                status: diagnoseStatus,
-                result: diagnoseResult,
-                isDiagnosing: isDiagnosing,
-                isDarkMode: settings.isDarkMode,
-                onCopy: copyDiagnosticsToPasteboard,
-                onClose: { showsDiagnosticsPopup = false }
-            )
-        }
         .onAppear {
             selectedAISettingsTab = settings.aiModeEnum == .local ? .local : .api
             if settings.aiModeEnum == .local && availableLocalModels.isEmpty {
@@ -163,20 +173,35 @@ struct SettingsView: View {
 
     private var tabBar: some View {
         HStack(spacing: 6) {
-            ForEach([SettingsTab.general, .ai, .deletedNotes]) { tab in
-                Button {
-                    withAnimation(.spring(response: 0.26, dampingFraction: 0.9)) {
-                        selectedTab = tab
+            mergedSegmentedControl(
+                selection: Binding(
+                    get: { selectedTab },
+                    set: { newTab in
+                        withAnimation(.spring(response: 0.26, dampingFraction: 0.9)) {
+                            selectedTab = newTab
+                        }
                     }
-                } label: {
-                    Text(tab.rawValue)
+                ),
+                options: [
+                    (SettingsTab.general.rawValue, SettingsTab.general),
+                    (SettingsTab.ai.rawValue, SettingsTab.ai)
+                ]
+            )
+
+            Spacer(minLength: 8)
+
+            Button {
+                withAnimation(.spring(response: 0.26, dampingFraction: 0.9)) {
+                    selectedTab = .deletedNotes
                 }
-                .buttonStyle(SettingsPillButtonStyle(
-                    isDarkMode: settings.isDarkMode,
-                    tone: .accent,
-                    isSelected: selectedTab == tab
-                ))
+            } label: {
+                Text(SettingsTab.deletedNotes.rawValue)
             }
+            .buttonStyle(SettingsPillButtonStyle(
+                isDarkMode: settings.isDarkMode,
+                tone: .accent,
+                isSelected: selectedTab == .deletedNotes
+            ))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -221,7 +246,7 @@ struct SettingsView: View {
                                 }
                             }
                         } label: {
-                            capsuleMenuLabel("Key: \(SettingsManager.hotkeyKeyNames[settings.hotkeyKeyCode] ?? "?")")
+                            fieldMenuLabel("Key: \(SettingsManager.hotkeyKeyNames[settings.hotkeyKeyCode] ?? "?")")
                         }
                         .menuStyle(.borderlessButton)
 
@@ -315,7 +340,7 @@ struct SettingsView: View {
             settingsCard {
                 HStack {
                     Spacer()
-                    choiceStrip(
+                    mergedSegmentedControl(
                         selection: Binding(
                             get: { selectedAISettingsTab },
                             set: { newTab in
@@ -400,42 +425,25 @@ struct SettingsView: View {
 
     private var apiSettingsCard: some View {
         settingsCard {
-            HStack(alignment: .top, spacing: 8) {
-                sectionHeader(
-                    "API Connection",
-                    subtitle: "Edit API details here. Active preset selection now happens in Saved."
-                )
-                Spacer(minLength: 8)
-                diagnosticsButton
-            }
+            sectionHeader(
+                "API Connection",
+                subtitle: "Edit API details here, then test. A successful test auto-saves or updates the matching saved model."
+            )
 
             labeledInput("Configuration Name") {
-                textInput(placeholder: "Preset name", text: $apiProfileNameDraft)
+                inlineActionInput(
+                    placeholder: "Preset name",
+                    text: $apiProfileNameDraft,
+                    actionLabel: isDiagnosing ? "Testing" : "Test",
+                    actionSystemImage: isDiagnosing ? nil : "stethoscope",
+                    actionEmphasis: true,
+                    isActionInProgress: isDiagnosing,
+                    action: { testAPIConfigurationFromEntry() }
+                )
+                .disabled(isDiagnosing || !canSaveAPIProfile)
             }
 
-            HStack(spacing: 6) {
-                Button("Save Current") {
-                    saveCurrentAPIProfile()
-                }
-                .buttonStyle(SettingsPillButtonStyle(
-                    isDarkMode: settings.isDarkMode,
-                    tone: .accent,
-                    isSelected: false
-                ))
-                .disabled(!canSaveAPIProfile)
-
-                Button("Update") {
-                    updateSelectedAPIProfile()
-                }
-                .buttonStyle(SettingsPillButtonStyle(
-                    isDarkMode: settings.isDarkMode,
-                    tone: .neutral,
-                    isSelected: false
-                ))
-                .disabled(settings.aiSelectedAPIProfile == nil)
-            }
-
-            Text(settings.aiSelectedAPIProfile.map { "Editing saved preset: \($0.name)" } ?? "Saving here creates or updates API presets. Pick the active preset from Saved.")
+            Text(settings.aiSelectedAPIProfile.map { "Editing saved preset: \($0.name)" } ?? "Successful tests save here automatically. Pick the active preset from Saved.")
                 .font(.system(size: 12))
                 .foregroundStyle(secondaryTextColor)
 
@@ -470,10 +478,10 @@ struct SettingsView: View {
             HStack(alignment: .top, spacing: 8) {
                 sectionHeader(
                     "Saved Models",
-                    subtitle: "Selection lives here. Local models and saved API presets are split into clear groups with inline health status."
+                    subtitle: "Selection lives here. Local models and saved API presets stay side by side with inline health icons."
                 )
                 Spacer(minLength: 8)
-                Button(action: openDiagnosticsPopupAndRunAllSavedProfiles) {
+                Button(action: runSavedProfilesHealthTest) {
                     HStack(spacing: 4) {
                         if isDiagnosing {
                             ProgressView()
@@ -494,80 +502,84 @@ struct SettingsView: View {
                 .disabled(isDiagnosing || (settings.aiAPISavedProfiles.isEmpty && availableLocalModels.isEmpty))
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
-                    Text("LOCAL MODELS")
+            if isDiagnosing {
+                Text(diagnoseStatus.isEmpty ? "Testing saved models..." : diagnoseStatus)
+                    .font(.system(size: 12))
+                    .foregroundStyle(secondaryTextColor)
+            }
+
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        Text("LOCAL MODELS")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(secondaryTextColor)
+
+                        Spacer()
+
+                        Button(action: refreshLocalModels) {
+                            HStack(spacing: 4) {
+                                if isLoadingLocalModels {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                } else {
+                                    Image(systemName: "arrow.clockwise")
+                                        .font(.system(size: 10, weight: .semibold))
+                                }
+                                Text(isLoadingLocalModels ? "Refreshing" : "Refresh")
+                            }
+                        }
+                        .buttonStyle(SettingsPillButtonStyle(
+                            isDarkMode: settings.isDarkMode,
+                            tone: .neutral,
+                            isSelected: false,
+                            compact: true
+                        ))
+                        .disabled(isLoadingLocalModels)
+                    }
+
+                    if availableLocalModels.isEmpty {
+                        Text(localModelsStatus.isEmpty ? "No local models loaded yet." : localModelsStatus)
+                            .font(.system(size: 12))
+                            .foregroundStyle(secondaryTextColor)
+                    } else {
+                        LazyVStack(spacing: 6) {
+                            ForEach(availableLocalModels, id: \.self) { modelName in
+                                savedLocalModelRow(modelName)
+                            }
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("SAVED API MODELS")
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(secondaryTextColor)
 
-                    Spacer()
+                    if settings.aiAPISavedProfiles.isEmpty {
+                        VStack(spacing: 6) {
+                            Text("No saved API models yet")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(primaryTextColor)
 
-                    Button(action: refreshLocalModels) {
-                        HStack(spacing: 4) {
-                            if isLoadingLocalModels {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Image(systemName: "arrow.clockwise")
-                                    .font(.system(size: 10, weight: .semibold))
+                            Text("Test a setup from the API tab and it will appear here automatically.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(secondaryTextColor)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 4)
+                    } else {
+                        LazyVStack(spacing: 6) {
+                            ForEach(settings.aiAPISavedProfiles) { profile in
+                                savedAPIProfileRow(profile)
                             }
-                            Text(isLoadingLocalModels ? "Refreshing" : "Refresh")
-                        }
-                    }
-                    .buttonStyle(SettingsPillButtonStyle(
-                        isDarkMode: settings.isDarkMode,
-                        tone: .neutral,
-                        isSelected: false,
-                        compact: true
-                    ))
-                    .disabled(isLoadingLocalModels)
-                }
-
-                if availableLocalModels.isEmpty {
-                    Text(localModelsStatus.isEmpty ? "No local models loaded yet." : localModelsStatus)
-                        .font(.system(size: 12))
-                        .foregroundStyle(secondaryTextColor)
-                } else {
-                    LazyVStack(spacing: 6) {
-                        ForEach(availableLocalModels, id: \.self) { modelName in
-                            savedLocalModelRow(modelName)
                         }
                     }
                 }
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("SAVED API MODELS")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(secondaryTextColor)
-
-                if settings.aiAPISavedProfiles.isEmpty {
-                    VStack(spacing: 6) {
-                        Text("No saved API models yet")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(primaryTextColor)
-
-                        Text("Save a model from the API tab, then manage and batch-test it here.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(secondaryTextColor)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 4)
-                } else {
-                    LazyVStack(spacing: 6) {
-                        ForEach(settings.aiAPISavedProfiles) { profile in
-                            savedAPIProfileRow(profile)
-                        }
-                    }
-                }
-            }
-
-            if !localModelsStatus.isEmpty && availableLocalModels.isEmpty {
-                Text(localModelsStatus)
-                    .font(.system(size: 12))
-                    .foregroundStyle(secondaryTextColor)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
 
             if !apiProfileStatus.isEmpty {
@@ -587,11 +599,15 @@ struct SettingsView: View {
             detail: "Local | \(savedProfileEndpointLabel(for: settings.aiLocalEndpoint))",
             isSelected: isSelected,
             healthStatus: savedModelHealthStatuses[localHealthKey(for: modelName)],
-            reserveTrailingSpace: 28
+            reserveTrailingSpace: 30
         ) {
             activateLocalSavedModel(modelName)
         } trailing: {
-            EmptyView()
+            savedHealthAccessory(
+                for: savedModelHealthStatuses[localHealthKey(for: modelName)],
+                title: modelName,
+                subtitle: "Local | \(savedProfileEndpointLabel(for: settings.aiLocalEndpoint))"
+            )
         }
     }
 
@@ -601,36 +617,22 @@ struct SettingsView: View {
             detail: savedProfileDetailLine(for: profile),
             isSelected: settings.aiSelectedAPIProfile?.id == profile.id && settings.aiModeEnum == .api,
             healthStatus: savedModelHealthStatuses[apiHealthKey(for: profile)],
-            reserveTrailingSpace: 96
+            reserveTrailingSpace: 74
         ) {
             activateSavedProfile(profile)
         } trailing: {
             HStack(spacing: 6) {
-                Button {
+                savedHealthAccessory(
+                    for: savedModelHealthStatuses[apiHealthKey(for: profile)],
+                    title: profile.name,
+                    subtitle: savedProfileDetailLine(for: profile)
+                )
+                compactIconButton(systemImage: "pencil", tint: primaryTextColor.opacity(0.85)) {
                     editSavedProfile(profile)
-                } label: {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 10, weight: .semibold))
                 }
-                .buttonStyle(SettingsPillButtonStyle(
-                    isDarkMode: settings.isDarkMode,
-                    tone: .neutral,
-                    isSelected: false,
-                    compact: true
-                ))
-
-                Button {
+                compactIconButton(systemImage: "trash", tint: Color.red.opacity(settings.isDarkMode ? 0.82 : 0.78)) {
                     deleteSavedProfile(profile)
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.system(size: 10, weight: .semibold))
                 }
-                .buttonStyle(SettingsPillButtonStyle(
-                    isDarkMode: settings.isDarkMode,
-                    tone: .destructive,
-                    isSelected: false,
-                    compact: true
-                ))
             }
         }
     }
@@ -698,10 +700,7 @@ struct SettingsView: View {
             }
             .buttonStyle(.plain)
 
-            HStack(spacing: 6) {
-                healthStatusIcon(for: healthStatus)
-                trailing()
-            }
+            trailing()
             .padding(.top, 8)
             .padding(.trailing, 8)
         }
@@ -1032,6 +1031,75 @@ struct SettingsView: View {
             )
     }
 
+    private func inlineActionInput(
+        placeholder: String,
+        text: Binding<String>,
+        actionLabel: String,
+        actionSystemImage: String?,
+        actionEmphasis: Bool = false,
+        isActionInProgress: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 8) {
+            TextField(placeholder, text: text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(primaryTextColor)
+
+            Button(action: action) {
+                HStack(spacing: 4) {
+                    if isActionInProgress {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else if let actionSystemImage {
+                        Image(systemName: actionSystemImage)
+                            .font(.system(size: 10.5, weight: .semibold))
+                    }
+                    Text(actionLabel)
+                }
+            }
+            .buttonStyle(SettingsPillButtonStyle(
+                isDarkMode: settings.isDarkMode,
+                tone: actionEmphasis ? .accent : .neutral,
+                isSelected: false,
+                compact: true
+            ))
+            .disabled(isActionInProgress)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(fieldFill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .stroke(outlineColor, lineWidth: 1)
+        )
+    }
+
+    private func fieldMenuLabel(_ title: String) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .font(.system(size: 11.5, weight: .semibold))
+        .foregroundStyle(primaryTextColor.opacity(0.96))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(settings.isDarkMode ? .white.opacity(0.08) : .white.opacity(0.94))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .stroke(outlineColor.opacity(1.15), lineWidth: 1)
+        )
+    }
+
     private func capsuleMenuLabel(_ title: String) -> some View {
         HStack(spacing: 6) {
             Text(title)
@@ -1069,6 +1137,28 @@ struct SettingsView: View {
             tone: .accent,
             isSelected: isSelected
         ))
+    }
+
+    private func compactIconButton(
+        systemImage: String,
+        tint: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 18, height: 18)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(fieldFill.opacity(settings.isDarkMode ? 1 : 0.92))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(outlineColor, lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
     }
 
     private func choiceGroup<Value: Hashable>(
@@ -1122,6 +1212,59 @@ struct SettingsView: View {
         }
     }
 
+    private func mergedSegmentedControl<Value: Hashable>(
+        selection: Binding<Value>,
+        options: [(String, Value)]
+    ) -> some View {
+        HStack(spacing: 0) {
+            ForEach(options.indices, id: \.self) { index in
+                let option = options[index]
+                let isSelected = selection.wrappedValue == option.1
+                Button(option.0) {
+                    selection.wrappedValue = option.1
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(isSelected ? Color.white : primaryTextColor.opacity(0.88))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .frame(minHeight: 30)
+                .background(
+                    segmentBackground(
+                        isSelected: isSelected,
+                        index: index,
+                        count: options.count
+                    )
+                )
+            }
+        }
+        .padding(3)
+        .background(
+            Capsule()
+                .fill(fieldFill)
+        )
+        .overlay(
+            Capsule()
+                .stroke(outlineColor, lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private func segmentBackground(isSelected: Bool, index: Int, count: Int) -> some View {
+        if isSelected {
+            UnevenRoundedRectangle(
+                topLeadingRadius: index == 0 ? 999 : 6,
+                bottomLeadingRadius: index == 0 ? 999 : 6,
+                bottomTrailingRadius: index == count - 1 ? 999 : 6,
+                topTrailingRadius: index == count - 1 ? 999 : 6,
+                style: .continuous
+            )
+            .fill(accentColor)
+        } else {
+            Color.clear
+        }
+    }
+
     private func savedProfileDetailLine(for profile: AIAPIProfile) -> String {
         let modelText = savedProfileModelName(for: profile)
         let endpointText = savedProfileEndpointLabel(for: profile)
@@ -1155,6 +1298,39 @@ struct SettingsView: View {
             .foregroundStyle(tint)
     }
 
+    @ViewBuilder
+    private func savedHealthAccessory(
+        for status: SavedModelHealthStatus?,
+        title: String,
+        subtitle: String
+    ) -> some View {
+        let resolvedStatus = status ?? SavedModelHealthStatus(state: .idle, message: nil)
+
+        switch resolvedStatus.state {
+        case .idle:
+            EmptyView()
+        case .testing:
+            ProgressView()
+                .controlSize(.small)
+                .frame(width: 16, height: 16)
+        case .success:
+            healthStatusIcon(for: resolvedStatus)
+        case .failure:
+            Button {
+                diagnoseStatus = "Failed"
+                diagnoseResult = resolvedStatus.message ?? "The saved model health check failed."
+                presentDiagnosticsPopup(
+                    title: title,
+                    subtitle: subtitle
+                )
+            } label: {
+                healthStatusIcon(for: resolvedStatus)
+            }
+            .buttonStyle(.plain)
+            .help("Show failure details")
+        }
+    }
+
     private func savedHealthStatusText(for status: SavedModelHealthStatus?) -> String? {
         guard let status else { return nil }
         switch status.state {
@@ -1163,9 +1339,9 @@ struct SettingsView: View {
         case .testing:
             return "Testing..."
         case .success:
-            return status.message ?? "Healthy"
+            return nil
         case .failure:
-            return status.message ?? "Failed"
+            return nil
         }
     }
 
@@ -1242,7 +1418,7 @@ struct SettingsView: View {
     }
 
     private var diagnosticsButton: some View {
-        Button(action: openDiagnosticsPopupAndRun) {
+        Button(action: runLocalDiagnosticsFromHeader) {
             HStack(spacing: 4) {
                 if isDiagnosing {
                     ProgressView()
@@ -1263,7 +1439,7 @@ struct SettingsView: View {
         .disabled(isDiagnosing)
     }
 
-    private func runDiagnose() {
+    private func runActiveConfigurationTest(autoSaveAPIProfileOnSuccess: Bool) {
         isDiagnosing = true
         diagnoseResult = ""
         diagnoseStatus = "Connecting..."
@@ -1280,8 +1456,17 @@ struct SettingsView: View {
                     isDiagnosing = false
                     switch result {
                     case .success(let info):
-                        diagnoseResult = info
-                        diagnoseStatus = "Connected"
+                        var resolvedInfo = info
+                        if autoSaveAPIProfileOnSuccess && settings.aiModeEnum == .api {
+                            let profile = settings.upsertCurrentAPIProfile(named: apiProfileNameDraft)
+                            apiProfileNameDraft = profile.name
+                            apiProfileStatus = "Test passed and saved \(profile.name)."
+                            resolvedInfo += "\n\nSaved as: \(profile.name)"
+                        }
+                        diagnoseResult = resolvedInfo
+                        diagnoseStatus = autoSaveAPIProfileOnSuccess && settings.aiModeEnum == .api
+                            ? "Connected and saved"
+                            : "Connected"
                     case .failure(let error):
                         diagnoseResult = "X \(error.localizedDescription)"
                         diagnoseStatus = "Failed"
@@ -1291,20 +1476,24 @@ struct SettingsView: View {
         )
     }
 
-    private func openDiagnosticsPopupAndRun() {
+    private func runLocalDiagnosticsFromHeader() {
+        diagnoseStatus = ""
+        diagnoseResult = ""
         presentDiagnosticsPopup(
             title: aiDiagnosticsButtonTitle,
             subtitle: diagnosticsSubtitleText
         )
-        runDiagnose()
+        runActiveConfigurationTest(autoSaveAPIProfileOnSuccess: false)
     }
 
-    private func openDiagnosticsPopupAndRunAllSavedProfiles() {
+    private func testAPIConfigurationFromEntry() {
+        diagnoseStatus = ""
+        diagnoseResult = ""
         presentDiagnosticsPopup(
-            title: "Test Saved Models",
-            subtitle: "Runs a health check against every saved API preset and returns a copyable report."
+            title: "Test API Connection",
+            subtitle: "Runs the active API configuration, then auto-saves the matching preset if the test succeeds."
         )
-        runSavedProfilesHealthTest()
+        runActiveConfigurationTest(autoSaveAPIProfileOnSuccess: true)
     }
 
     private func refreshLocalModels() {
@@ -1350,8 +1539,10 @@ struct SettingsView: View {
         }
         switch settings.aiAPIRequestStyleEnum {
         case .standard:
-            let values = [settings.aiAPIEndpoint, settings.aiAPIModel, settings.aiApiKey]
-            return values.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            let endpoint = settings.aiAPIEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+            let model = settings.aiAPIModel.trimmingCharacters(in: .whitespacesAndNewlines)
+            let apiKey = settings.aiApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !endpoint.isEmpty && !model.isEmpty && !apiKey.isEmpty
         case .json:
             return !settings.aiAPIAdvancedJSONConfiguration.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
@@ -1400,20 +1591,6 @@ struct SettingsView: View {
             syncAPIProfileDraft()
         }
         apiProfileStatus = "Deleted \(removed.name)."
-        resetAIDiagnostics()
-    }
-
-    private func saveCurrentAPIProfile() {
-        let profile = settings.saveCurrentAPIProfile(named: apiProfileNameDraft)
-        apiProfileNameDraft = profile.name
-        apiProfileStatus = "Saved \(profile.name)."
-        resetAIDiagnostics()
-    }
-
-    private func updateSelectedAPIProfile() {
-        guard let profile = settings.updateSelectedAPIProfile(named: apiProfileNameDraft) else { return }
-        apiProfileNameDraft = profile.name
-        apiProfileStatus = "Updated \(profile.name)."
         resetAIDiagnostics()
     }
 
