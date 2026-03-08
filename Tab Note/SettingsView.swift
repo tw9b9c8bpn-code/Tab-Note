@@ -577,7 +577,7 @@ struct SettingsView: View {
         settingsCard {
             sectionHeader(
                 "Advanced JSON Mode",
-                subtitle: "Paste a full JSON request definition. Tab Note will execute it after replacing prompt placeholders."
+                subtitle: "Paste a full JSON request definition. Prompt presets only apply when the body uses the prompt placeholders."
             )
 
             HStack(spacing: 8) {
@@ -620,7 +620,7 @@ struct SettingsView: View {
                     .stroke(outlineColor, lineWidth: 1)
             )
 
-            Text("Placeholders: `{{system_prompt}}`, `{{user_message}}`, `{{stream}}`, `{{temperature}}`, `{{max_tokens}}`, `{{max_completion_tokens}}`. Hardcode everything else directly in the JSON.")
+            Text("Use `{{system_prompt}}` and `{{user_message}}` if you want Tab Note's prompt presets to flow into JSON mode. Common OpenAI/Anthropic response shapes are auto-detected, otherwise add `response.text_path` manually. Other placeholders: `{{stream}}`, `{{temperature}}`, `{{max_tokens}}`, `{{max_completion_tokens}}`.")
                 .font(.system(size: 11))
                 .foregroundStyle(secondaryTextColor)
 

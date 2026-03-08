@@ -1101,19 +1101,17 @@ class AIService {
     }
 
     private func advancedJSONResponseText(from data: Data, textPath: String?) throws -> String {
-        if let textPath, !textPath.isEmpty {
-            guard let json = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) else {
-                throw AIError.invalidResponse
-            }
+        if let json = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) {
             if let message = apiErrorMessage(from: json), !message.isEmpty {
                 throw AIError.requestFailed(message)
             }
-            guard let value = jsonValue(at: textPath, in: json),
-                  let text = stringContent(from: value),
-                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                throw AIError.invalidResponse
+            if let text = extractedAdvancedJSONText(from: json, explicitTextPath: textPath, streaming: false) {
+                return text
             }
-            return text
+            if let hint = advancedJSONEmptyResponseHint(from: json) {
+                throw AIError.requestFailed(hint)
+            }
+            throw AIError.requestFailed("No response text found. Add `response.text_path` to the Advanced JSON configuration.")
         }
 
         let raw = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -1178,6 +1176,83 @@ class AIService {
         }
     }
 
+    private func extractedAdvancedJSONText(from json: Any, explicitTextPath: String?, streaming: Bool) -> String? {
+        if let explicitTextPath,
+           let text = textAtAdvancedJSONPath(explicitTextPath, in: json) {
+            return text
+        }
+
+        for candidatePath in commonAdvancedJSONTextPaths(streaming: streaming) {
+            if let text = textAtAdvancedJSONPath(candidatePath, in: json) {
+                return text
+            }
+        }
+        return nil
+    }
+
+    private func textAtAdvancedJSONPath(_ path: String, in json: Any) -> String? {
+        guard let value = jsonValue(at: path, in: json),
+              let text = stringContent(from: value)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else {
+            return nil
+        }
+        return text
+    }
+
+    private func commonAdvancedJSONTextPaths(streaming: Bool) -> [String] {
+        if streaming {
+            return [
+                "choices.0.delta.content",
+                "choices.0.text",
+                "delta.text",
+                "content_block.text",
+                "message.content"
+            ]
+        }
+        return [
+            "choices.0.message.content",
+            "choices.0.text",
+            "content.0.text",
+            "output_text",
+            "output.0.content.0.text",
+            "message.content"
+        ]
+    }
+
+    private func advancedJSONEmptyResponseHint(from json: Any) -> String? {
+        let finishReasonPaths = [
+            "choices.0.finish_reason",
+            "choices.0.finishreason",
+            "stop_reason"
+        ]
+        for path in finishReasonPaths {
+            guard let finishReason = jsonValue(at: path, in: json) as? String else { continue }
+            if finishReason.caseInsensitiveCompare("length") == .orderedSame {
+                return "Model returned no visible content before hitting the token limit. Increase `max_completion_tokens` or change the JSON body."
+            }
+        }
+
+        if let refusal = jsonValue(at: "choices.0.message.refusal", in: json) as? String,
+           !refusal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return refusal
+        }
+
+        let reasoningTokenPaths = [
+            "usage.completion_tokens_details.reasoning_tokens",
+            "usage.completiontokensdetails.reasoningtokens"
+        ]
+        for path in reasoningTokenPaths {
+            guard let reasoningTokens = jsonValue(at: path, in: json) as? NSNumber else { continue }
+            if reasoningTokens.intValue > 0,
+               extractedAdvancedJSONText(from: json, explicitTextPath: nil, streaming: false) == nil {
+                return "The provider spent tokens on reasoning but returned no visible answer. Increase `max_completion_tokens` or adjust the JSON request."
+            }
+        }
+
+        return nil
+    }
+
     private func streamAdvancedJSON(
         preparedRequest: PreparedAdvancedJSONRequest,
         onStatus: @escaping (String) -> Void,
@@ -1236,7 +1311,19 @@ class AIService {
                         }
                         chunk = text
                     } else {
-                        chunk = payload
+                        if let payloadData = payload.data(using: .utf8),
+                           let json = try? JSONSerialization.jsonObject(with: payloadData, options: [.fragmentsAllowed]) {
+                            if let message = self?.apiErrorMessage(from: json), !message.isEmpty {
+                                throw AIError.requestFailed(message)
+                            }
+                            guard let extracted = self?.extractedAdvancedJSONText(from: json, explicitTextPath: nil, streaming: true),
+                                  !extracted.isEmpty else {
+                                continue
+                            }
+                            chunk = extracted
+                        } else {
+                            chunk = payload
+                        }
                     }
 
                     aggregated += chunk

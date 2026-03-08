@@ -31,6 +31,8 @@ This document exists because the AI backend went through several incorrect itera
   - optional streaming path/prefix/done token
 - Advanced JSON mode is intentionally not a thin wrapper around OpenAI-compatible assumptions. Do not inject provider-specific fields into it.
 - Advanced JSON mode supports placeholder replacement for runtime values such as `{{system_prompt}}`, `{{user_message}}`, `{{stream}}`, `{{temperature}}`, `{{max_tokens}}`, and `{{max_completion_tokens}}`.
+- Prompt injection presets only affect Advanced JSON mode when the JSON body actually uses placeholders like `{{system_prompt}}` and `{{user_message}}`; hardcoded messages bypass them.
+- If `response.text_path` is omitted, the app may auto-detect common OpenAI/Anthropic response shapes, but it should never dump raw JSON into the inline AI popup as a fallback.
 
 ## Implementation iterations
 
@@ -64,6 +66,7 @@ Why it failed:
 Current rule:
 - JSON mode is a first-class request path.
 - When JSON mode is selected, the app should execute the pasted JSON request definition after placeholder replacement and should not reshape it into OpenAI-compatible or Anthropic-compatible payloads.
+- When users hardcode `"messages"` content in the JSON body, that is the final request content. Prompt injection presets are only applied through placeholders.
 
 ### Iteration 2: Hardcoded `Authorization`
 

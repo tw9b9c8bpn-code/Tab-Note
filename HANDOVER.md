@@ -1,5 +1,21 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-08, JSON response extraction + prompt-placeholder clarification)
+- Fixed Advanced JSON response parsing in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/AI_BACKEND_IMPLEMENTATION.md`
+- Behavior changes:
+  - Advanced JSON mode no longer falls back to dumping raw JSON payloads into the inline AI popup when the provider response is JSON
+  - if `response.text_path` is missing, the app now auto-detects common OpenAI/Anthropic response shapes before failing with a clear extraction error
+  - if the provider spends reasoning tokens or hits a length stop without visible output, the app now surfaces a direct error instead of treating the raw payload as the answer
+  - settings copy now explicitly says prompt presets only flow into JSON mode when the body uses `{{system_prompt}}` and `{{user_message}}`
+- Preferences / dislikes reinforced from user feedback:
+  - wants pasted JSON mode to behave transparently instead of showing raw response bodies as if they were the answer
+  - expects prompt injection presets to keep working in JSON mode when the JSON template is wired correctly
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had let missing `response.text_path` fall back to returning the entire raw JSON body, which made JSON mode look successful even when no visible assistant text had actually been extracted.
+
 ## Completed in this pass (2026-03-08, advanced JSON API mode)
 - Added persisted Advanced JSON API mode in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsManager.swift`
