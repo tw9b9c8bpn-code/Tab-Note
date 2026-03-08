@@ -445,6 +445,72 @@ class AIService {
         )
     }
 
+    func diagnoseLocalModel(
+        endpoint: String,
+        model: String,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedModel.isEmpty else {
+            completion(.failure(AIError.noContent))
+            return
+        }
+
+        let base = endpoint.isEmpty ? "http://localhost:11434" : endpoint
+        guard let url = URL(string: "\(base)/api/chat") else {
+            completion(.failure(AIError.invalidURL))
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 60
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "model": trimmedModel,
+            "messages": [
+                ["role": "system", "content": "You are a connectivity test. Reply with OK."],
+                ["role": "user", "content": "Reply with OK."]
+            ],
+            "stream": false
+        ])
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                if let error {
+                    completion(.failure(AIError.requestFailed(self?.requestFailureMessage(for: error) ?? error.localizedDescription)))
+                    return
+                }
+                guard let http = response as? HTTPURLResponse else {
+                    completion(.failure(AIError.invalidResponse))
+                    return
+                }
+                guard let data else {
+                    completion(.failure(AIError.invalidResponse))
+                    return
+                }
+                guard (200..<300).contains(http.statusCode) else {
+                    completion(.failure(AIError.requestFailed("HTTP \(http.statusCode): \(self?.parseAPIErrorMessage(from: data) ?? "Unexpected response")")))
+                    return
+                }
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let message = json["message"] as? [String: Any],
+                   let content = message["content"] as? String,
+                   !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    completion(.success("Local model healthy\nModel: \(trimmedModel)"))
+                    return
+                }
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let content = json["response"] as? String,
+                   !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    completion(.success("Local model healthy\nModel: \(trimmedModel)"))
+                    return
+                }
+                completion(.failure(AIError.noContent))
+            }
+        }.resume()
+    }
+
     func fetchLocalModels(
         endpoint: String,
         completion: @escaping (Result<[String], Error>) -> Void

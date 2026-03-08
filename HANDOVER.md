@@ -1,5 +1,28 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-08, saved selector ownership + inline health states + cost ratio column)
+- Reworked local/API diagnostics access in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`
+- Reworked Saved-tab ownership and row layout in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`
+- Reworked token cost comparison popover in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/NoteEditorView.swift`
+- Behavior changes:
+  - Saved now owns model selection: local models and saved API presets are split into separate categories there, and selecting a row makes it the active model
+  - Local/API tabs are now form-oriented; Local no longer exposes the installed-model picker and API no longer exposes the preset-selection dropdown
+  - `Test All` now writes pass/fail state back into the Saved list itself with inline status icons and status text, while still keeping the copyable diagnostics popup
+  - saved API rows now keep their edit/delete actions inside the card at the top right as compact icon buttons
+  - the pricing popover now shows a `vs current` multiplier column so other models are compared directly against the active model cost
+- Preferences / dislikes reinforced from user feedback:
+  - wants Saved to be the single place for model selection, with Local/API used for entering and editing details only
+  - wants batch test results visible directly in the Saved list, not trapped only in a popup transcript
+  - wants row controls compact and inside the model card, using icons instead of wider text buttons
+  - wants cost comparison to answer “how many times more expensive is this than my current model?” at a glance
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had treated Saved as an additional management tab while still leaving selection split across Local/API, but the user wanted selection ownership consolidated into Saved.
+  - I had treated batch diagnostics as popup-only output, but the user wanted the health result written back into each visible row.
+  - I had kept edit/delete controls outside the card body even though the user wanted them compactly embedded in the row chrome itself.
+
 ## Completed in this pass (2026-03-08, saved AI models tab + batch health testing)
 - Reworked AI diagnostics/service access in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`

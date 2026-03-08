@@ -2987,6 +2987,7 @@ private struct InlineCursorAnswerPopoverView: View {
                             PricingBreakdownPopover(
                                 tokenCount: metrics.tokens,
                                 sections: pricingSections,
+                                currentCost: metrics.estimatedCost,
                                 isDarkMode: settings.isDarkMode
                             )
                         }
@@ -3184,6 +3185,7 @@ private struct ThoughtStatusText: View {
 private struct PricingBreakdownPopover: View {
     let tokenCount: Int
     let sections: [InlineCursorAnswerPopoverView.PricingPopoverSection]
+    let currentCost: Double
     let isDarkMode: Bool
 
     private var background: Color {
@@ -3194,11 +3196,34 @@ private struct PricingBreakdownPopover: View {
         isDarkMode ? .white.opacity(0.08) : .black.opacity(0.08)
     }
 
+    private var mutedText: Color {
+        isDarkMode ? Color.white.opacity(0.45) : Color.black.opacity(0.44)
+    }
+
+    private var bodyText: Color {
+        isDarkMode ? Color.white.opacity(0.72) : Color.black.opacity(0.68)
+    }
+
+    private var activeText: Color {
+        isDarkMode ? Color.white.opacity(0.92) : Color.black.opacity(0.86)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Cost estimate for ~\(tokenCount) output tokens")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(isDarkMode ? Color.white.opacity(0.9) : Color.black.opacity(0.82))
+                .foregroundStyle(activeText)
+
+            HStack(spacing: 10) {
+                Text("Model")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("Est.")
+                    .frame(width: 62, alignment: .trailing)
+                Text("vs current")
+                    .frame(width: 68, alignment: .trailing)
+            }
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(mutedText)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
@@ -3206,17 +3231,22 @@ private struct PricingBreakdownPopover: View {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(section.title.uppercased())
                                 .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(isDarkMode ? Color.white.opacity(0.45) : Color.black.opacity(0.44))
+                                .foregroundStyle(mutedText)
 
                             ForEach(section.rows) { row in
                                 HStack(spacing: 10) {
                                     Text(row.label)
                                         .font(.system(size: 10.5, weight: row.isActive ? .semibold : .regular))
-                                        .foregroundStyle(row.isActive ? (isDarkMode ? Color.white.opacity(0.92) : Color.black.opacity(0.86)) : (isDarkMode ? Color.white.opacity(0.72) : Color.black.opacity(0.68)))
-                                    Spacer(minLength: 12)
+                                        .foregroundStyle(row.isActive ? activeText : bodyText)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
                                     Text(InlineCursorAnswerPopoverView.formattedCost(row.cost))
                                         .font(.system(size: 10.5, weight: row.isActive ? .semibold : .medium, design: .monospaced))
-                                        .foregroundStyle(row.isActive ? (isDarkMode ? Color.white.opacity(0.92) : Color.black.opacity(0.86)) : (isDarkMode ? Color.white.opacity(0.72) : Color.black.opacity(0.68)))
+                                        .foregroundStyle(row.isActive ? activeText : bodyText)
+                                        .frame(width: 62, alignment: .trailing)
+                                    Text(relativeCostText(for: row))
+                                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                        .foregroundStyle(row.isActive ? activeText : mutedText)
+                                        .frame(width: 68, alignment: .trailing)
                                 }
                             }
                         }
@@ -3227,11 +3257,11 @@ private struct PricingBreakdownPopover: View {
 
             Text("Heuristic output-only estimate. Real billed usage depends on provider, model, prompt tokens, caching, and routing.")
                 .font(.system(size: 9))
-                .foregroundStyle(isDarkMode ? Color.white.opacity(0.45) : Color.black.opacity(0.45))
+                .foregroundStyle(mutedText)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(12)
-        .frame(width: 320, alignment: .leading)
+        .frame(width: 410, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(background)
@@ -3240,6 +3270,29 @@ private struct PricingBreakdownPopover: View {
                         .stroke(border, lineWidth: 1)
                 )
         )
+    }
+
+    private func relativeCostText(for row: InlineCursorAnswerPopoverView.PricingPopoverRow) -> String {
+        if row.isActive {
+            return "Current"
+        }
+        guard currentCost > 0.000_000_1 else {
+            return row.cost > 0.000_000_1 ? "Paid" : "Same"
+        }
+        let ratio = row.cost / currentCost
+        if ratio >= 100 {
+            return String(format: "%.0fx", ratio)
+        }
+        if ratio >= 10 {
+            return String(format: "%.1fx", ratio)
+        }
+        if ratio >= 1 {
+            return String(format: "%.1fx", ratio)
+        }
+        if ratio <= 0.01 {
+            return "<0.01x"
+        }
+        return String(format: "%.2fx", ratio)
     }
 }
 
