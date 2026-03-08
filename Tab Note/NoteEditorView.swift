@@ -1272,6 +1272,10 @@ private final class InlineAnswerPanelModel: ObservableObject {
     }
     @Published var elapsedThinkingSeconds: TimeInterval = 0
     @Published var lastThoughtDurationSeconds: TimeInterval?
+    /// Time-to-first-token: elapsed seconds before streaming content began arriving.
+    var firstTokenReceivedAt: Date?
+    /// Cached streaming duration (first-token → completion) for accurate post-completion TPS display.
+    var finalStreamingDuration: TimeInterval?
 
     var requestSentence: String = ""
     var requestWindowID: String = NotesStore.mainWindowID
@@ -1295,9 +1299,13 @@ private final class InlineAnswerPanelModel: ObservableObject {
 
     var thoughtStatus: ThoughtStatusDisplay? {
         if isStreaming {
+            let hasTokens = firstTokenReceivedAt != nil
+            let primaryText = hasTokens
+                ? "Streaming... \(formattedThinkingDuration(elapsedThinkingSeconds))s"
+                : "Waiting... \(formattedThinkingDuration(elapsedThinkingSeconds))s"
             return ThoughtStatusDisplay(
-                primaryText: "Thinking... \(formattedThinkingDuration(elapsedThinkingSeconds))s",
-                secondaryText: thoughtTokensPerSecondText(duration: elapsedThinkingSeconds)
+                primaryText: primaryText,
+                secondaryText: hasTokens ? thoughtTokensPerSecondText(duration: elapsedThinkingSeconds) : nil
             )
         }
         if let lastThoughtDurationSeconds {
@@ -1405,6 +1413,8 @@ private final class InlineAnswerPanelModel: ObservableObject {
         requestKind = .initial
         elapsedThinkingSeconds = 0
         lastThoughtDurationSeconds = nil
+        firstTokenReceivedAt = nil
+        finalStreamingDuration = nil
     }
 
     func beginThinkingTimer() {
@@ -1413,7 +1423,7 @@ private final class InlineAnswerPanelModel: ObservableObject {
         elapsedThinkingSeconds = 0
         lastThoughtDurationSeconds = nil
 
-        thinkingTimer = Timer.publish(every: 0.01, on: .main, in: .common)
+        thinkingTimer = Timer.publish(every: 0.1, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] now in
                 self?.updateThinkingElapsed(now: now)
@@ -1421,8 +1431,12 @@ private final class InlineAnswerPanelModel: ObservableObject {
     }
 
     func completeThinkingTimer() {
-        updateThinkingElapsed(now: Date())
+        let now = Date()
+        updateThinkingElapsed(now: now)
         lastThoughtDurationSeconds = elapsedThinkingSeconds
+        if let firstTokenReceivedAt {
+            finalStreamingDuration = max(0.1, now.timeIntervalSince(firstTokenReceivedAt))
+        }
         stopThinkingTimer()
     }
 
@@ -1452,7 +1466,20 @@ private final class InlineAnswerPanelModel: ObservableObject {
 
     private func thoughtTokensPerSecondText(duration: TimeInterval) -> String {
         let tokens = estimatedTokenCount(for: rawAnswer)
-        let rate = duration > 0 ? Double(tokens) / duration : 0
+        // Use time since first token (streaming duration) instead of total elapsed time,
+        // so TTFT (time-to-first-token) doesn't drag down the displayed TPS.
+        let streamingDuration: TimeInterval
+        if let finalStreamingDuration {
+            // Post-completion: use the frozen value.
+            streamingDuration = finalStreamingDuration
+        } else if let firstTokenReceivedAt {
+            // Still streaming: measure from first token.
+            streamingDuration = max(0.1, Date().timeIntervalSince(firstTokenReceivedAt))
+        } else {
+            // No tokens yet (waiting for TTFT): fall back to total elapsed.
+            streamingDuration = duration
+        }
+        let rate = streamingDuration > 0 ? Double(tokens) / streamingDuration : 0
         return "\(formattedTokensPerSecond(rate)) tps"
     }
 }
@@ -1666,6 +1693,8 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
     private var anchorScreenRect: NSRect?
     private var isSuppressed = false
     private var activeRequestID = UUID()
+    private var pendingStreamingAnswer: String?
+    private var streamingRefreshTimer: Timer?
     private var fallbackAnswerBeforeRequest: String?
     private var fallbackThoughtDurationBeforeRequest: TimeInterval?
     private var isTemporarilyHiddenByApp = false
@@ -1733,7 +1762,7 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
             onPartial: { [weak self] partial in
                 DispatchQueue.main.async {
                     guard let self, self.activeRequestID == requestID else { return }
-                    self.updateStreamingAnswer(self.normalizeStreamingAnswer(partial))
+                    self.updateStreamingAnswer(partial)
                 }
             },
             completion: { [weak self] result in
@@ -1764,15 +1793,38 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
         )
     }
 
-    func updateStreamingAnswer(_ answer: String) {
+    func updateStreamingAnswer(_ rawPartial: String) {
         guard !isSuppressed else { return }
-        model.rawAnswer = answer
         model.isStreaming = true
-        refreshPanelLayout(useAnchor: false)
+
+        // Record when the first token arrived so TPS excludes TTFT.
+        if model.firstTokenReceivedAt == nil {
+            model.firstTokenReceivedAt = Date()
+        }
+
+        // Throttle UI refresh to avoid O(n²) re-rendering on every token.
+        // Store the raw partial and normalize + render only on timer ticks (~50ms).
+        pendingStreamingAnswer = rawPartial
+        if streamingRefreshTimer == nil {
+            // First token – normalize and render immediately for responsiveness.
+            let normalized = normalizeStreamingAnswer(rawPartial)
+            model.rawAnswer = normalized
+            refreshPanelLayout(useAnchor: false)
+            streamingRefreshTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+                guard let self else { return }
+                if let pending = self.pendingStreamingAnswer {
+                    self.pendingStreamingAnswer = nil
+                    let normalized = self.normalizeStreamingAnswer(pending)
+                    self.model.rawAnswer = normalized
+                    self.refreshPanelLayout(useAnchor: false)
+                }
+            }
+        }
     }
 
     func completeStreaming(with answer: String) {
         guard !isSuppressed else { return }
+        stopStreamingRefreshTimer()
         model.rawAnswer = answer
         model.isStreaming = false
         model.completeThinkingTimer()
@@ -1781,6 +1833,7 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
 
     func finishStreaming() {
         guard !isSuppressed else { return }
+        stopStreamingRefreshTimer()
         if model.hasVisibleContent {
             model.isStreaming = false
             model.completeThinkingTimer()
@@ -1788,6 +1841,12 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
         } else {
             close()
         }
+    }
+
+    private func stopStreamingRefreshTimer() {
+        streamingRefreshTimer?.invalidate()
+        streamingRefreshTimer = nil
+        pendingStreamingAnswer = nil
     }
 
     func present(
@@ -1872,7 +1931,7 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
             onPartial: { [weak self] partial in
                 DispatchQueue.main.async {
                     guard let self, self.activeRequestID == requestID else { return }
-                    self.updateStreamingAnswer(self.normalizeStreamingAnswer(partial))
+                    self.updateStreamingAnswer(partial)
                 }
             },
             completion: { [weak self] result in
@@ -1931,6 +1990,7 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
 
     func close() {
         aiService.cancelCurrentRequest()
+        stopStreamingRefreshTimer()
         isSuppressed = true
         activeRequestID = UUID()
         isTemporarilyHiddenByApp = false

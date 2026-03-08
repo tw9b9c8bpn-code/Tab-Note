@@ -17,6 +17,20 @@ class AIService {
     static let shared = AIService()
     private var currentTask: URLSessionDataTask?
     private var currentStreamingTask: Task<Void, Never>?
+
+    /// Dedicated URLSession for SSE streaming — no caching, no cookies, optimised for
+    /// long-lived chunked responses so the first byte arrives without delay.
+    private static let streamingSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        config.urlCache = nil
+        config.httpShouldSetCookies = false
+        config.httpShouldUsePipelining = true
+        config.timeoutIntervalForRequest = 180
+        config.timeoutIntervalForResource = 300
+        return URLSession(configuration: config)
+    }()
+
     init() {}
 
     private enum APITransport {
@@ -38,6 +52,8 @@ class AIService {
         let responseTextPath: String?
         let streamingEnabled: Bool
         let streamTextPath: String?
+        /// Pre-split path segments for streaming text extraction (avoids per-token string splitting).
+        let streamTextPathSegments: [String]
         let streamLinePrefix: String
         let streamDoneToken: String
     }
@@ -1106,6 +1122,7 @@ class AIService {
         let response = json["response"] as? [String: Any]
         let streaming = json["streaming"] as? [String: Any]
 
+        let streamTextPath = (streaming?["text_path"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         return AdvancedJSONModeConfig(
             endpoint: (endpoint?.isEmpty == false ? endpoint! : fallbackEndpoint),
             method: method,
@@ -1113,7 +1130,8 @@ class AIService {
             bodyTemplate: bodyTemplate,
             responseTextPath: (response?["text_path"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
             streamingEnabled: streaming?["enabled"] as? Bool ?? false,
-            streamTextPath: (streaming?["text_path"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+            streamTextPath: streamTextPath,
+            streamTextPathSegments: streamTextPath?.split(separator: ".").map(String.init) ?? [],
             streamLinePrefix: (streaming?["prefix"] as? String) ?? "data:",
             streamDoneToken: (streaming?["done_token"] as? String) ?? "[DONE]"
         )
@@ -1258,7 +1276,10 @@ class AIService {
     }
 
     private func jsonValue(at path: String, in root: Any) -> Any? {
-        let segments = path.split(separator: ".").map(String.init)
+        jsonValue(segments: path.split(separator: ".").map(String.init), in: root)
+    }
+
+    private func jsonValue(segments: [String], in root: Any) -> Any? {
         guard !segments.isEmpty else { return nil }
 
         var current: Any? = root
@@ -1385,7 +1406,9 @@ class AIService {
         currentStreamingTask = Task { [weak self] in
             var aggregated = ""
             do {
-                let (bytes, response) = try await URLSession.shared.bytes(for: preparedRequest.request)
+                var streamReq = preparedRequest.request
+                streamReq.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+                let (bytes, response) = try await AIService.streamingSession.bytes(for: streamReq)
                 guard let http = response as? HTTPURLResponse else {
                     throw AIError.invalidResponse
                 }
@@ -1395,7 +1418,7 @@ class AIService {
 
                 let prefix = preparedRequest.config.streamLinePrefix
                 let doneToken = preparedRequest.config.streamDoneToken
-                let textPath = preparedRequest.config.streamTextPath
+                let textPathSegments = preparedRequest.config.streamTextPathSegments
 
                 streamLoop: for try await line in bytes.lines {
                     try Task.checkCancellation()
@@ -1416,7 +1439,7 @@ class AIService {
                     }
 
                     let chunk: String
-                    if let textPath, !textPath.isEmpty {
+                    if !textPathSegments.isEmpty {
                         guard let payloadData = payload.data(using: .utf8),
                               let json = try? JSONSerialization.jsonObject(with: payloadData, options: [.fragmentsAllowed]) else {
                             continue
@@ -1424,7 +1447,7 @@ class AIService {
                         if let message = self?.apiErrorMessage(from: json), !message.isEmpty {
                             throw AIError.requestFailed(message)
                         }
-                        guard let value = self?.jsonValue(at: textPath, in: json),
+                        guard let value = self?.jsonValue(segments: textPathSegments, in: json),
                               let text = self?.stringContent(from: value),
                               !text.isEmpty else {
                             continue
@@ -1448,7 +1471,7 @@ class AIService {
 
                     aggregated += chunk
                     if let onPartial {
-                        await MainActor.run { onPartial(aggregated) }
+                        onPartial(aggregated)
                     }
                 }
 
@@ -1811,7 +1834,9 @@ class AIService {
         currentStreamingTask = Task { [weak self] in
             var aggregated = ""
             do {
-                let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                var streamReq = request
+                streamReq.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+                let (bytes, response) = try await AIService.streamingSession.bytes(for: streamReq)
                 guard let http = response as? HTTPURLResponse else {
                     throw AIError.invalidResponse
                 }
@@ -1826,7 +1851,7 @@ class AIService {
                     guard let content = try self?.ollamaContentChunk(from: trimmed), !content.isEmpty else { continue }
                     aggregated += content
                     if let onPartial {
-                        await MainActor.run { onPartial(aggregated) }
+                        onPartial(aggregated)
                     }
                 }
 
@@ -1871,7 +1896,9 @@ class AIService {
         currentStreamingTask = Task { [weak self] in
             var aggregated = ""
             do {
-                let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                var streamReq = request
+                streamReq.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+                let (bytes, response) = try await AIService.streamingSession.bytes(for: streamReq)
                 guard let http = response as? HTTPURLResponse else {
                     throw AIError.invalidResponse
                 }
@@ -1893,7 +1920,7 @@ class AIService {
                         guard !content.isEmpty else { continue }
                         aggregated += content
                         if let onPartial {
-                            await MainActor.run { onPartial(aggregated) }
+                            onPartial(aggregated)
                         }
                     }
                 }
@@ -1939,7 +1966,9 @@ class AIService {
         currentStreamingTask = Task { [weak self] in
             var aggregated = ""
             do {
-                let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                var streamReq = request
+                streamReq.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+                let (bytes, response) = try await AIService.streamingSession.bytes(for: streamReq)
                 guard let http = response as? HTTPURLResponse else {
                     throw AIError.invalidResponse
                 }
@@ -1961,7 +1990,7 @@ class AIService {
                         guard !content.isEmpty else { continue }
                         aggregated += content
                         if let onPartial {
-                            await MainActor.run { onPartial(aggregated) }
+                            onPartial(aggregated)
                         }
                     }
                 }
