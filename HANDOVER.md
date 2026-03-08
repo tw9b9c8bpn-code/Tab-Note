@@ -1,5 +1,24 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-08, saved AI models tab + batch health testing)
+- Reworked AI diagnostics/service access in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`
+- Reworked AI settings tabs and saved model management in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`
+- Behavior changes:
+  - AI settings now have three tabs inside the AI section: `Local`, `API`, and `Saved`
+  - `Saved` shows a clear single-selection list of saved API presets, with the active preset visibly marked and selectable directly from the list
+  - each saved preset row now has `Edit` and `Delete`; `Edit` loads that preset into the API tab for modification, while `Delete` removes it from the saved list
+  - `Saved` also has a `Test All` action that runs a sequential health check across every saved preset and writes a copyable batch report into the diagnostics popup
+- Preferences / dislikes reinforced from user feedback:
+  - wants saved models/presets managed in a dedicated tab instead of being buried only inside the API form
+  - wants a clear pick-one selection UI, not just a compact dropdown, when reviewing saved models
+  - wants batch health testing for the whole saved-model roster because checking one-by-one is too slow
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had assumed the restored dropdown in the API tab was sufficient, but the user actually wanted a dedicated saved-model management surface with explicit selection.
+  - I had treated diagnostics as current-config-only, when saved presets also need a first-class bulk validation flow.
+  - I had assumed edit/delete actions could stay implicit inside the API form, but the user wanted those actions attached directly to each saved entry.
+
 ## Completed in this pass (2026-03-08, AI settings dropdown restore + JSON advanced merge)
 - Reworked AI settings layout in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`

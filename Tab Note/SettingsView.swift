@@ -16,6 +16,14 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+private enum AISettingsTab: String, CaseIterable, Identifiable {
+    case local = "Local"
+    case api = "API"
+    case saved = "Saved"
+
+    var id: String { rawValue }
+}
+
 struct SettingsView: View {
     @EnvironmentObject var settings: SettingsManager
     @EnvironmentObject var store: NotesStore
@@ -24,6 +32,7 @@ struct SettingsView: View {
     let onClose: (() -> Void)?
 
     @State private var selectedTab: SettingsTab = .general
+    @State private var selectedAISettingsTab: AISettingsTab = .local
 
     @State private var isDiagnosing = false
     @State private var diagnoseResult = ""
@@ -36,6 +45,8 @@ struct SettingsView: View {
     @State private var apiProfileStatus = ""
     @State private var advancedJSONStatus = ""
     @State private var showsDiagnosticsPopup = false
+    @State private var diagnosticsPopupTitle = ""
+    @State private var diagnosticsPopupSubtitle = ""
 
     init(onClose: (() -> Void)? = nil) {
         self.onClose = onClose
@@ -63,8 +74,8 @@ struct SettingsView: View {
         .frame(minWidth: 560, minHeight: 520)
         .sheet(isPresented: $showsDiagnosticsPopup) {
             AIDiagnosticsPopup(
-                title: aiDiagnosticsButtonTitle,
-                subtitle: diagnosticsSubtitleText,
+                title: diagnosticsPopupTitle.isEmpty ? aiDiagnosticsButtonTitle : diagnosticsPopupTitle,
+                subtitle: diagnosticsPopupSubtitle.isEmpty ? diagnosticsSubtitleText : diagnosticsPopupSubtitle,
                 status: diagnoseStatus,
                 result: diagnoseResult,
                 isDiagnosing: isDiagnosing,
@@ -74,6 +85,7 @@ struct SettingsView: View {
             )
         }
         .onAppear {
+            selectedAISettingsTab = settings.aiModeEnum == .local ? .local : .api
             if settings.aiModeEnum == .local && availableLocalModels.isEmpty {
                 refreshLocalModels()
             }
@@ -84,6 +96,9 @@ struct SettingsView: View {
         }
         .onChange(of: settings.aiModeEnum) { _, newMode in
             resetAIDiagnostics()
+            if selectedAISettingsTab != .saved {
+                selectedAISettingsTab = newMode == .local ? .local : .api
+            }
             if newMode == .local {
                 refreshLocalModels()
             } else {
@@ -284,19 +299,31 @@ struct SettingsView: View {
                     Spacer()
                     choiceStrip(
                         selection: Binding(
-                            get: { settings.aiModeEnum },
-                            set: { settings.aiModeEnum = $0 }
+                            get: { selectedAISettingsTab },
+                            set: { newTab in
+                                selectedAISettingsTab = newTab
+                                switch newTab {
+                                case .local:
+                                    settings.aiModeEnum = .local
+                                case .api:
+                                    settings.aiModeEnum = .api
+                                case .saved:
+                                    syncAPIProfileDraft()
+                                }
+                            }
                         ),
-                        options: AIMode.allCases.map { ($0.displayName, $0) }
+                        options: AISettingsTab.allCases.map { ($0.rawValue, $0) }
                     )
                     Spacer()
                 }
             }
 
-            if settings.aiModeEnum == .local {
+            if selectedAISettingsTab == .local {
                 localAISettingsCard
-            } else {
+            } else if selectedAISettingsTab == .api {
                 apiSettingsCard
+            } else {
+                savedProfilesCard
             }
         }
     }
@@ -473,6 +500,63 @@ struct SettingsView: View {
                 standardAPIFields
             } else {
                 advancedJSONSection
+            }
+        }
+    }
+
+    private var savedProfilesCard: some View {
+        settingsCard {
+            HStack(alignment: .top, spacing: 8) {
+                sectionHeader(
+                    "Saved Models",
+                    subtitle: "Pick one saved API setup as the active model, edit its details, or test the whole saved list in one pass."
+                )
+                Spacer(minLength: 8)
+                Button(action: openDiagnosticsPopupAndRunAllSavedProfiles) {
+                    HStack(spacing: 4) {
+                        if isDiagnosing {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "stethoscope")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        Text(isDiagnosing ? "Testing" : "Test All")
+                    }
+                }
+                .buttonStyle(SettingsPillButtonStyle(
+                    isDarkMode: settings.isDarkMode,
+                    tone: .accent,
+                    isSelected: false,
+                    compact: true
+                ))
+                .disabled(isDiagnosing || settings.aiAPISavedProfiles.isEmpty)
+            }
+
+            if settings.aiAPISavedProfiles.isEmpty {
+                VStack(spacing: 6) {
+                    Text("No saved models yet")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(primaryTextColor)
+
+                    Text("Save a model from the API tab, then manage and batch-test it here.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(secondaryTextColor)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 6)
+            } else {
+                LazyVStack(spacing: 6) {
+                    ForEach(settings.aiAPISavedProfiles) { profile in
+                        savedProfileRow(profile)
+                    }
+                }
+            }
+
+            if !apiProfileStatus.isEmpty {
+                Text(apiProfileStatus)
+                    .font(.system(size: 12))
+                    .foregroundStyle(secondaryTextColor)
             }
         }
     }
@@ -721,6 +805,12 @@ struct SettingsView: View {
         settings.isDarkMode ? .black.opacity(0.35) : .black.opacity(0.12)
     }
 
+    private var accentColor: Color {
+        settings.isDarkMode
+        ? Color(red: 0.89, green: 0.49, blue: 0.18)
+        : Color(red: 0.90, green: 0.50, blue: 0.16)
+    }
+
     private func settingsCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             content()
@@ -894,6 +984,122 @@ struct SettingsView: View {
         return availableLocalModels.isEmpty ? "Choose Installed Model" : "Installed Models"
     }
 
+    private func savedProfileRow(_ profile: AIAPIProfile) -> some View {
+        let isSelected = settings.aiSelectedAPIProfile?.id == profile.id
+
+        return HStack(spacing: 8) {
+            Button {
+                activateSavedProfile(profile)
+            } label: {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(isSelected ? accentColor : secondaryTextColor)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text(profile.name)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(primaryTextColor)
+                                .lineLimit(1)
+
+                            if isSelected {
+                                Text("Active")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 3)
+                                    .background(
+                                        Capsule()
+                                            .fill(accentColor)
+                                    )
+                            }
+                        }
+
+                        Text(savedProfileDetailLine(for: profile))
+                            .font(.system(size: 11))
+                            .foregroundStyle(secondaryTextColor)
+                            .lineLimit(2)
+                    }
+
+                    Spacer(minLength: 8)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 9)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(isSelected ? accentColor.opacity(settings.isDarkMode ? 0.14 : 0.10) : fieldFill)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(isSelected ? accentColor.opacity(0.75) : outlineColor, lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+
+            Button("Edit") {
+                editSavedProfile(profile)
+            }
+            .buttonStyle(SettingsPillButtonStyle(
+                isDarkMode: settings.isDarkMode,
+                tone: .neutral,
+                isSelected: false,
+                compact: true
+            ))
+
+            Button("Delete") {
+                deleteSavedProfile(profile)
+            }
+            .buttonStyle(SettingsPillButtonStyle(
+                isDarkMode: settings.isDarkMode,
+                tone: .destructive,
+                isSelected: false,
+                compact: true
+            ))
+        }
+    }
+
+    private func savedProfileDetailLine(for profile: AIAPIProfile) -> String {
+        let modelText = savedProfileModelName(for: profile)
+        let endpointText = savedProfileEndpointLabel(for: profile)
+        return [profile.requestStyle.displayName, modelText, endpointText]
+            .filter { !$0.isEmpty }
+            .joined(separator: " | ")
+    }
+
+    private func savedProfileModelName(for profile: AIAPIProfile) -> String {
+        let trimmedModel = profile.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedModel.isEmpty {
+            return trimmedModel
+        }
+        if profile.requestStyle == .json {
+            return extractedModelName(fromAdvancedJSONConfiguration: profile.advancedJSONConfiguration) ?? "JSON template"
+        }
+        return "Model not set"
+    }
+
+    private func savedProfileEndpointLabel(for profile: AIAPIProfile) -> String {
+        let trimmedEndpoint = profile.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let host = URL(string: trimmedEndpoint)?.host, !host.isEmpty {
+            return host
+        }
+        return trimmedEndpoint.isEmpty ? "Endpoint not set" : trimmedEndpoint
+    }
+
+    private func extractedModelName(fromAdvancedJSONConfiguration rawConfiguration: String) -> String? {
+        let trimmed = rawConfiguration.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let data = trimmed.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) as? [String: Any],
+              let body = json["body"] as? [String: Any],
+              let model = body["model"] as? String else {
+            return nil
+        }
+        let normalized = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
+    }
+
     private func closeSettings() {
         if let onClose {
             onClose()
@@ -957,8 +1163,19 @@ struct SettingsView: View {
     }
 
     private func openDiagnosticsPopupAndRun() {
-        showsDiagnosticsPopup = true
+        presentDiagnosticsPopup(
+            title: aiDiagnosticsButtonTitle,
+            subtitle: diagnosticsSubtitleText
+        )
         runDiagnose()
+    }
+
+    private func openDiagnosticsPopupAndRunAllSavedProfiles() {
+        presentDiagnosticsPopup(
+            title: "Test Saved Models",
+            subtitle: "Runs a health check against every saved API preset and returns a copyable report."
+        )
+        runSavedProfilesHealthTest()
     }
 
     private func refreshLocalModels() {
@@ -987,6 +1204,8 @@ struct SettingsView: View {
         diagnoseResult = ""
         diagnoseStatus = ""
         showsDiagnosticsPopup = false
+        diagnosticsPopupTitle = ""
+        diagnosticsPopupSubtitle = ""
     }
 
     private var canSaveAPIProfile: Bool {
@@ -1017,6 +1236,27 @@ struct SettingsView: View {
         guard settings.applyAPIProfile(id: id), let profile = settings.aiSelectedAPIProfile else { return }
         apiProfileNameDraft = profile.name
         apiProfileStatus = "Loaded \(profile.name)."
+        resetAIDiagnostics()
+    }
+
+    private func activateSavedProfile(_ profile: AIAPIProfile) {
+        settings.aiModeEnum = .api
+        selectAPIProfile(profile.id)
+        apiProfileStatus = "Selected \(profile.name) as the active saved model."
+    }
+
+    private func editSavedProfile(_ profile: AIAPIProfile) {
+        activateSavedProfile(profile)
+        selectedAISettingsTab = .api
+        apiProfileStatus = "Editing \(profile.name) in the API tab."
+    }
+
+    private func deleteSavedProfile(_ profile: AIAPIProfile) {
+        guard let removed = settings.deleteAPIProfile(id: profile.id) else { return }
+        if settings.aiSelectedAPIProfile == nil {
+            syncAPIProfileDraft()
+        }
+        apiProfileStatus = "Deleted \(removed.name)."
         resetAIDiagnostics()
     }
 
@@ -1058,6 +1298,57 @@ struct SettingsView: View {
 
     private func profileMenuTitle(for profile: AIAPIProfile) -> String {
         "\(profile.name) • \(profile.requestStyle.displayName)"
+    }
+
+    private func presentDiagnosticsPopup(title: String, subtitle: String) {
+        diagnosticsPopupTitle = title
+        diagnosticsPopupSubtitle = subtitle
+        showsDiagnosticsPopup = true
+    }
+
+    private func runSavedProfilesHealthTest() {
+        let profiles = settings.aiAPISavedProfiles
+        guard !profiles.isEmpty else {
+            isDiagnosing = false
+            diagnoseStatus = "Nothing to test"
+            diagnoseResult = "No saved API models are available."
+            return
+        }
+
+        isDiagnosing = true
+        diagnoseResult = ""
+        diagnoseStatus = "Testing 1 of \(profiles.count)..."
+        runSavedProfilesHealthTest(profiles, index: 0, reports: [])
+    }
+
+    private func runSavedProfilesHealthTest(
+        _ profiles: [AIAPIProfile],
+        index: Int,
+        reports: [String]
+    ) {
+        guard index < profiles.count else {
+            isDiagnosing = false
+            diagnoseStatus = "Completed"
+            diagnoseResult = reports.joined(separator: "\n\n----------------\n\n")
+            return
+        }
+
+        let profile = profiles[index]
+        diagnoseStatus = "Testing \(index + 1) of \(profiles.count): \(profile.name)"
+
+        AIService.shared.diagnose(profile: profile) { result in
+            var updatedReports = reports
+            let header = "\(profile.name) | \(profile.requestStyle.displayName) | \(self.savedProfileModelName(for: profile))"
+
+            switch result {
+            case .success(let info):
+                updatedReports.append("[OK] \(header)\n\(info)")
+            case .failure(let error):
+                updatedReports.append("[Failed] \(header)\n\(error.localizedDescription)")
+            }
+
+            runSavedProfilesHealthTest(profiles, index: index + 1, reports: updatedReports)
+        }
     }
 
     private func copyDiagnosticsToPasteboard() {

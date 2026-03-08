@@ -433,6 +433,18 @@ class AIService {
         }
     }
 
+    func diagnose(profile: AIAPIProfile, completion: @escaping (Result<String, Error>) -> Void) {
+        diagnoseConfiguredAPI(
+            endpoint: profile.endpoint,
+            apiKey: profile.apiKey,
+            apiHeaderName: profile.headerName,
+            model: profile.model,
+            requestStyle: profile.requestStyle,
+            advancedJSONConfiguration: profile.advancedJSONConfiguration,
+            completion: completion
+        )
+    }
+
     func fetchLocalModels(
         endpoint: String,
         completion: @escaping (Result<[String], Error>) -> Void
