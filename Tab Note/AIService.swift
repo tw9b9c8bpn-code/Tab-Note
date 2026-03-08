@@ -46,6 +46,7 @@ class AIService {
         let config: AdvancedJSONModeConfig
         let request: URLRequest
         let resolvedEndpoint: String
+        let resolvedModel: String
     }
 
     struct InlineAnswerOptions {
@@ -85,9 +86,7 @@ class AIService {
                 endpoint: mode == .local ? settings.aiLocalEndpoint : settings.aiAPIEndpoint,
                 apiKey: mode == .api ? settings.aiApiKey : "",
                 apiHeaderName: mode == .api ? settings.aiAPIHeaderName : "Authorization",
-                model: mode == .local
-                    ? settings.aiLocalModel
-                    : (settings.aiAPIRequestStyleEnum == .json ? "Custom JSON" : settings.aiAPIModel),
+                model: mode == .local ? settings.aiLocalModel : settings.currentAIModel,
                 apiRequestStyle: mode == .api ? settings.aiAPIRequestStyleEnum : .standard,
                 advancedJSONConfiguration: mode == .api ? settings.aiAPIAdvancedJSONConfiguration : "",
                 promptSelection: settings.aiPromptSelection
@@ -983,10 +982,19 @@ class AIService {
         }
 
         request.httpBody = bodyData
+        let resolvedModel: String
+        if let body = resolvedBody as? [String: Any],
+           let model = body["model"] as? String {
+            let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+            resolvedModel = trimmedModel.isEmpty ? fallbackModel : trimmedModel
+        } else {
+            resolvedModel = fallbackModel
+        }
         return PreparedAdvancedJSONRequest(
             config: config,
             request: request,
-            resolvedEndpoint: resolvedEndpoint
+            resolvedEndpoint: resolvedEndpoint,
+            resolvedModel: resolvedModel
         )
     }
 

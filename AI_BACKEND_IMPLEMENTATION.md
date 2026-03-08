@@ -34,6 +34,7 @@ This document exists because the AI backend went through several incorrect itera
 - Prompt injection presets only affect Advanced JSON mode when the JSON body actually uses placeholders like `{{system_prompt}}` and `{{user_message}}`; hardcoded messages bypass them.
 - If `response.text_path` is omitted, the app may auto-detect common OpenAI/Anthropic response shapes, but it should never dump raw JSON into the inline AI popup as a fallback.
 - Console logs like `stalled, attempting fallback` and `NSURLErrorDomain -1005` can come from CFNetwork transport fallback even when the provider request eventually works. Do not immediately treat them as payload-shape bugs.
+- JSON mode should still surface the real model name from `body.model` for inline metrics; using a placeholder label like `Custom JSON` hides pricing/routing context and makes speed-cost debugging misleading.
 
 ## Implementation iterations
 

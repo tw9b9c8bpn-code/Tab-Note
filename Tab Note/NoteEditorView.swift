@@ -2448,8 +2448,10 @@ private struct InlineCursorAnswerPopoverView: View {
         if lower.contains("sonnet") { return 15.0 }
         if lower.contains("haiku") { return 5.0 }
         if lower.contains("gpt-5 pro") || lower.contains("gpt-5-pro") { return 120.0 }
+        if lower.contains("gpt-5 nano") || lower.contains("gpt-5-nano") { return 0.40 }
+        if lower.contains("gpt-5 mini") || lower.contains("gpt-5-mini") { return 2.0 }
         if lower.contains("codex-mini-latest") { return 6.0 }
-        if lower.contains("codex-mini") || lower.contains("gpt-5 mini") || lower.contains("gpt-5-mini") { return 2.0 }
+        if lower.contains("codex-mini") { return 6.0 }
         if lower.contains("codex") || lower.contains("gpt-5") || lower.contains("gpt-4.1") || lower.contains("gpt-4o") {
             return 10.0
         }

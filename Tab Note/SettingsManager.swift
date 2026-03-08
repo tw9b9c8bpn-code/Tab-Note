@@ -329,7 +329,10 @@ class SettingsManager: ObservableObject {
         case .local:
             return aiLocalModel
         case .api:
-            return aiAPIRequestStyleEnum == .json ? "Custom JSON" : aiAPIModel
+            if aiAPIRequestStyleEnum == .json {
+                return extractedModelName(fromAdvancedJSONConfiguration: aiAPIAdvancedJSONConfiguration) ?? "Custom JSON"
+            }
+            return aiAPIModel
         }
     }
 
@@ -385,6 +388,19 @@ class SettingsManager: ObservableObject {
 
     static func makeAIPromptSummaryChip(selection: PromptInjectionSelection) -> String {
         shared.promptInjectionConfiguration.summaryChip(for: selection)
+    }
+
+    private func extractedModelName(fromAdvancedJSONConfiguration rawConfiguration: String) -> String? {
+        let trimmed = rawConfiguration.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let data = trimmed.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) as? [String: Any],
+              let body = json["body"] as? [String: Any],
+              let model = body["model"] as? String else {
+            return nil
+        }
+        let normalized = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
     }
 
     func resetAIPromptSelection() {

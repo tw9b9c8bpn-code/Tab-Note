@@ -1,5 +1,19 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-08, JSON model metrics correction)
+- Fixed JSON-mode model labeling and cost estimation in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsManager.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/NoteEditorView.swift`
+- Behavior changes:
+  - Advanced JSON mode now derives the active model name from `body.model` instead of showing `Custom JSON` everywhere
+  - inline popup pricing now uses the real JSON model name, so GPT-5 Nano no longer falls back to the generic default price bucket
+  - updated GPT-5 Nano output pricing heuristic to `$0.40 / 1M` output tokens and kept GPT-5 Mini at `$2.00 / 1M`
+- Preferences / dislikes reinforced from user feedback:
+  - expects AI speed/cost readouts to be believable and not obviously wrong when using JSON mode
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had treated `Custom JSON` as an acceptable model label in the popup, but that broke the cost heuristic and obscured the real provider/model context during debugging.
+
 ## Completed in this pass (2026-03-08, API transport error clarification)
 - Updated network error handling in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`
