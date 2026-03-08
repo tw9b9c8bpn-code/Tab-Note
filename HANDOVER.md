@@ -1,5 +1,18 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-08, documented streaming throughput lesson from Claude fix)
+- Updated backend implementation notes in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/AI_BACKEND_IMPLEMENTATION.md`
+- Behavior/documentation changes:
+  - documented the real throughput trap: `await MainActor.run { onPartial(...) }` inside the streaming token loop serializes parsing behind UI work when the callback already dispatches to the main queue
+  - documented the companion UI lesson that popup refreshes must be throttled, because per-token normalization/markdown rerender/layout makes fast providers look artificially slow
+  - recorded that the popup `tps` is only a visible-output heuristic and should not be treated as provider throughput
+- Preferences / dislikes reinforced from user feedback:
+  - wants working fixes and hard-earned backend lessons written down clearly so future AI do not repeat the same mistakes
+  - dislikes black-box throughput regressions and wants the real cause documented precisely
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had investigated the slowdown as if it might be mostly provider-side or purely a measurement issue, but Claude's fix made the more important app-side serialization explicit: the stream loop was still waiting on UI delivery.
+
 ## Completed in this pass (2026-03-08, compact segmented tab spacing)
 - Reworked segmented settings tab spacing in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`

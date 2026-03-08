@@ -42,6 +42,8 @@ This document exists because the AI backend went through several incorrect itera
 - JSON-mode saved profiles must persist their own endpoint/model derived from the JSON config, not stale values left over from the Standard API form.
 - Cached local model names must live outside the settings view so Saved, the footnote quick picker, and busy-model routing all see the same local-model roster.
 - When the active model in a mode is already busy, new inline requests should try the next saved model in that same mode group before reusing the busy one. Replays and follow-ups should stay on the same model.
+- Streaming throughput can be accidentally serialized by UI delivery. Do not `await MainActor.run { onPartial(...) }` inside the token loop when the callback already hops to the main queue itself.
+- Throttle popup streaming refreshes. Rendering and relayouting every token makes the app look slow even when the provider is fast.
 
 ## Known-good fast preset
 
@@ -58,6 +60,21 @@ What to preserve around it:
 - keep the popup's markdown renderer active while streaming so `**Bold labels**` show up as soon as the closing marker arrives
 
 ## Implementation iterations
+
+### Iteration 12: Serializing the streaming loop behind the UI
+
+Wrong assumption:
+- Delivering every streamed partial with `await MainActor.run { onPartial(...) }` was harmless because it only updated the popup.
+
+Why it failed:
+- That made the network parse loop wait for main-thread rendering work before it could continue to the next token.
+- The visible symptom looked like poor provider throughput even when the upstream model was fast.
+- The popup was also normalizing, rerendering markdown, and relayouting on extremely frequent partial updates, compounding the slowdown.
+
+Current rule:
+- Keep the stream loop fire-and-forget with respect to UI delivery when the callback already dispatches to the main queue.
+- Throttle popup partial refreshes to a sane cadence instead of rerendering on every token.
+- Treat the displayed `tps` as a visible-output heuristic, not ground-truth provider throughput.
 
 ### Iteration 9: Overwriting renamed API presets
 
