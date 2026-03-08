@@ -2056,16 +2056,20 @@ private struct InlineCursorAnswerPopoverView: View {
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
         let isPlaceholder = normalized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let displayText = isPlaceholder ? "Thinking... \(formattedThinkingDuration(elapsedSeconds))s" : normalized
-        let color = isPlaceholder ? NSColor.secondaryLabelColor : NSColor.labelColor
-        return NSAttributedString(
-            string: displayText,
-            attributes: [
-                .font: textFont(choice: fontChoice, size: 12),
-                .foregroundColor: color,
-                .paragraphStyle: defaultParagraphStyle()
-            ]
-        )
+        if isPlaceholder {
+            return NSAttributedString(
+                string: "Thinking... \(formattedThinkingDuration(elapsedSeconds))s",
+                attributes: [
+                    .font: textFont(choice: fontChoice, size: 12),
+                    .foregroundColor: NSColor.secondaryLabelColor,
+                    .paragraphStyle: defaultParagraphStyle()
+                ]
+            )
+        }
+
+        // Keep rich-text markdown rendering active while streaming so models that
+        // emit bold headings or bullet labels do not collapse into plain text.
+        return renderedAttributedString(from: normalized, fontChoice: fontChoice)
     }
 
     private static func renderedBlock(_ block: String, fontChoice: FontChoice) -> NSAttributedString {

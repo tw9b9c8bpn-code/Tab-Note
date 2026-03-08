@@ -1,5 +1,23 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-08, streaming markdown + fast OpenAI preset documentation)
+- Updated inline popup rendering in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/NoteEditorView.swift`
+- Updated inline answer prompt contract in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`
+- Updated backend notes in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/AI_BACKEND_IMPLEMENTATION.md`
+- Behavior changes:
+  - streamed popup content now goes through the same manual markdown renderer as completed content once visible text exists, so `**bold**` labels/headings render during fast API streams instead of looking like flat plain text
+  - inline answer and follow-up prompts now bias models more strongly toward bold markdown lead-ins for structured answers, improving consistency across providers like GPT-5 Nano
+  - documented the current user-confirmed fast OpenAI GPT-5 Nano JSON preset so future AI do not regress back into the slower or more assumption-heavy iterations
+- Preferences / dislikes reinforced from user feedback:
+  - wants backend wins that finally work to be documented clearly so future AI do not reintroduce the same mistakes
+  - expects fast models to retain the same rich-text feel as the other configured providers, not a degraded plain-text popup
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had left the streaming renderer in a plain-text path even though the popup already had a working markdown renderer; that made the new fast path look visually worse than it really was.
+  - I had not explicitly documented the now-working fast OpenAI preset, which would have made it too easy for a future pass to undo the latency improvements by guessing at the JSON/backend shape.
+
 ## Completed in this pass (2026-03-08, JSON model metrics correction)
 - Fixed JSON-mode model labeling and cost estimation in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsManager.swift`

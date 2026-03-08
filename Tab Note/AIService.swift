@@ -262,6 +262,7 @@ class AIService {
         Follow any custom instructions exactly. \
         When it improves readability, use lightweight Markdown formatting \
         (short headings, bullet/numbered lists, and bold emphasis). \
+        Prefer bold Markdown lead-ins for section labels or key takeaways when the answer has structure. \
         Separate paragraphs with a single blank line. \
         Never merge heading labels directly into body text. \
         Do not use code fences unless explicitly requested.
@@ -275,6 +276,7 @@ class AIService {
 
         Formatting preference:
         Rich-text friendly Markdown is allowed when helpful for readability. \
+        Prefer bold lead-ins for major labels when the answer has multiple parts. \
         Keep paragraph separation clear with blank lines.
 
         Return only the answer text.
@@ -336,6 +338,7 @@ class AIService {
         Follow any custom instructions exactly. \
         When it improves readability, use lightweight Markdown formatting \
         (short headings, bullet/numbered lists, and bold emphasis). \
+        Prefer bold Markdown lead-ins for section labels or key takeaways when the answer has structure. \
         Separate paragraphs with a single blank line. \
         Never merge heading labels directly into body text. \
         Do not use code fences unless explicitly requested.
@@ -356,6 +359,7 @@ class AIService {
 
         Formatting preference:
         Rich-text friendly Markdown is allowed when helpful for readability. \
+        Prefer bold lead-ins for major labels when the answer has multiple parts. \
         Keep paragraph separation clear with blank lines.
 
         Return only the answer text.

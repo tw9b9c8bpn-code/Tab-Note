@@ -35,6 +35,21 @@ This document exists because the AI backend went through several incorrect itera
 - If `response.text_path` is omitted, the app may auto-detect common OpenAI/Anthropic response shapes, but it should never dump raw JSON into the inline AI popup as a fallback.
 - Console logs like `stalled, attempting fallback` and `NSURLErrorDomain -1005` can come from CFNetwork transport fallback even when the provider request eventually works. Do not immediately treat them as payload-shape bugs.
 - JSON mode should still surface the real model name from `body.model` for inline metrics; using a placeholder label like `Custom JSON` hides pricing/routing context and makes speed-cost debugging misleading.
+- Inline popup markdown rendering should stay active during streaming, not only after completion, or providers that emit bold Markdown incrementally will look visually downgraded compared with the standard adapters.
+
+## Known-good fast preset
+
+User-confirmed fast OpenAI setup for GPT-5 Nano:
+- Advanced JSON mode
+- endpoint: `/v1/responses`
+- streaming enabled
+- streamed text extracted from the event `delta`
+- low latency achieved with `reasoning.effort: "minimal"`
+
+What to preserve around it:
+- keep `{{system_prompt}}` and `{{user_message}}` placeholders in the JSON body so prompt presets still flow into the request
+- keep markdown-friendly inline prompts, because GPT-5 Nano can answer quickly but otherwise tends to flatten headings/labels more than some other providers
+- keep the popup's markdown renderer active while streaming so `**Bold labels**` show up as soon as the closing marker arrives
 
 ## Implementation iterations
 
@@ -69,6 +84,19 @@ Current rule:
 - JSON mode is a first-class request path.
 - When JSON mode is selected, the app should execute the pasted JSON request definition after placeholder replacement and should not reshape it into OpenAI-compatible or Anthropic-compatible payloads.
 - When users hardcode `"messages"` content in the JSON body, that is the final request content. Prompt injection presets are only applied through placeholders.
+
+### Iteration 8: Treating streamed text as plain text
+
+Wrong assumption:
+- The inline popup could render streamed content as a plain string first and only apply markdown styling after completion.
+
+Why it failed:
+- Fast providers and low-latency JSON presets make the streaming state the dominant visible state.
+- If streamed content contains Markdown like `**Heading**`, plain-text rendering makes the fast path look visually worse than slower providers even though the payload is correct.
+
+Current rule:
+- Use the same manual markdown rendering pipeline for streamed visible text and completed text.
+- Keep the special placeholder styling only for the empty `Thinking...` state.
 
 ### Iteration 2: Hardcoded `Authorization`
 
