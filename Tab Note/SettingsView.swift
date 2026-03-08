@@ -280,44 +280,23 @@ struct SettingsView: View {
     private var aiSettings: some View {
         VStack(spacing: 8) {
             settingsCard {
-                VStack(spacing: 6) {
-                    HStack {
-                        Spacer()
-                        choiceStrip(
-                            selection: Binding(
-                                get: { settings.aiModeEnum },
-                                set: { settings.aiModeEnum = $0 }
-                            ),
-                            options: AIMode.allCases.map { ($0.displayName, $0) }
-                        )
-                        Spacer()
-                    }
-
-                    if settings.aiModeEnum == .api {
-                        HStack {
-                            Spacer()
-                            choiceStrip(
-                                selection: Binding(
-                                    get: { settings.aiAPIRequestStyleEnum },
-                                    set: { settings.aiAPIRequestStyleEnum = $0 }
-                                ),
-                                options: APIRequestStyle.allCases.map { ($0.displayName, $0) }
-                            )
-                            Spacer()
-                        }
-                    }
+                HStack {
+                    Spacer()
+                    choiceStrip(
+                        selection: Binding(
+                            get: { settings.aiModeEnum },
+                            set: { settings.aiModeEnum = $0 }
+                        ),
+                        options: AIMode.allCases.map { ($0.displayName, $0) }
+                    )
+                    Spacer()
                 }
             }
 
             if settings.aiModeEnum == .local {
                 localAISettingsCard
             } else {
-                apiProfilesCard
-                if settings.aiAPIRequestStyleEnum == .json {
-                    advancedJSONCard
-                } else {
-                    apiConnectionCard
-                }
+                apiSettingsCard
             }
         }
     }
@@ -341,66 +320,71 @@ struct SettingsView: View {
             }
 
             labeledInput("Model Name") {
-                VStack(alignment: .leading, spacing: 6) {
-                    textInput(placeholder: "e.g. llama3", text: Binding(
-                        get: { settings.aiLocalModel },
-                        set: { settings.aiLocalModel = $0 }
-                    ))
+                textInput(placeholder: "e.g. llama3", text: Binding(
+                    get: { settings.aiLocalModel },
+                    set: { settings.aiLocalModel = $0 }
+                ))
+            }
 
-                    HStack(spacing: 6) {
-                        Button(action: refreshLocalModels) {
-                            HStack(spacing: 4) {
-                                if isLoadingLocalModels {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                } else {
-                                    Image(systemName: "arrow.clockwise")
-                                        .font(.system(size: 12, weight: .semibold))
+            labeledInput("Installed Models") {
+                HStack(spacing: 6) {
+                    Menu {
+                        if availableLocalModels.isEmpty {
+                            Button("No models found") { }
+                                .disabled(true)
+                        } else {
+                            ForEach(availableLocalModels, id: \.self) { modelName in
+                                Button(modelName) {
+                                    settings.aiLocalModel = modelName
                                 }
-                                Text(isLoadingLocalModels ? "Refreshing..." : "Refresh Local Models")
                             }
                         }
-                        .buttonStyle(SettingsPillButtonStyle(
-                            isDarkMode: settings.isDarkMode,
-                            tone: .neutral,
-                            isSelected: false
-                        ))
-                        .disabled(isLoadingLocalModels)
+                    } label: {
+                        capsuleMenuLabel(localModelMenuTitle)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .disabled(availableLocalModels.isEmpty)
 
-                        Menu {
-                            if availableLocalModels.isEmpty {
-                                Button("No models found") { }
-                                    .disabled(true)
+                    Button(action: refreshLocalModels) {
+                        HStack(spacing: 4) {
+                            if isLoadingLocalModels {
+                                ProgressView()
+                                    .controlSize(.small)
                             } else {
-                                ForEach(availableLocalModels, id: \.self) { modelName in
-                                    Button(modelName) {
-                                        settings.aiLocalModel = modelName
-                                    }
-                                }
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 12, weight: .semibold))
                             }
-                        } label: {
-                            capsuleMenuLabel(availableLocalModels.isEmpty ? "Available Models" : "Pick Installed Model")
+                            Text(isLoadingLocalModels ? "Refreshing..." : "Refresh")
                         }
-                        .menuStyle(.borderlessButton)
-                        .disabled(availableLocalModels.isEmpty)
                     }
-
-                    if !localModelsStatus.isEmpty {
-                        Text(localModelsStatus)
-                            .font(.system(size: 12))
-                            .foregroundStyle(secondaryTextColor)
-                    }
+                    .buttonStyle(SettingsPillButtonStyle(
+                        isDarkMode: settings.isDarkMode,
+                        tone: .neutral,
+                        isSelected: false
+                    ))
+                    .disabled(isLoadingLocalModels)
                 }
+            }
+
+            if !localModelsStatus.isEmpty {
+                Text(localModelsStatus)
+                    .font(.system(size: 12))
+                    .foregroundStyle(secondaryTextColor)
             }
         }
     }
 
-    private var apiProfilesCard: some View {
+    private var apiSettingsCard: some View {
         settingsCard {
-            sectionHeader(
-                "Saved API Setups",
-                subtitle: "Standard and JSON presets live in one list and restore the full API state."
-            )
+            HStack(alignment: .top, spacing: 8) {
+                sectionHeader(
+                    "API Connection",
+                    subtitle: "Switch saved setups fast and keep advanced JSON inside the same API workflow."
+                )
+                Spacer(minLength: 8)
+                diagnosticsButton
+            }
 
             labeledInput("Saved Configurations") {
                 Menu {
@@ -422,6 +406,7 @@ struct SettingsView: View {
                         settings.aiSelectedAPIProfile.map { profileMenuTitle(for: $0) }
                         ?? "Current Unsaved"
                     )
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .menuStyle(.borderlessButton)
             }
@@ -462,7 +447,7 @@ struct SettingsView: View {
                 .disabled(settings.aiSelectedAPIProfile == nil)
             }
 
-            Text("Each preset stores request style, endpoint, header, key, model, and JSON config together.")
+            Text("Standard and JSON presets stay together in this one list and restore the full API state.")
                 .font(.system(size: 12))
                 .foregroundStyle(secondaryTextColor)
 
@@ -471,20 +456,29 @@ struct SettingsView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(secondaryTextColor)
             }
+
+            Divider()
+
+            labeledInput("Request Style") {
+                choiceStrip(
+                    selection: Binding(
+                        get: { settings.aiAPIRequestStyleEnum },
+                        set: { settings.aiAPIRequestStyleEnum = $0 }
+                    ),
+                    options: APIRequestStyle.allCases.map { ($0.displayName, $0) }
+                )
+            }
+
+            if settings.aiAPIRequestStyleEnum == .standard {
+                standardAPIFields
+            } else {
+                advancedJSONSection
+            }
         }
     }
 
-    private var apiConnectionCard: some View {
-        settingsCard {
-            HStack(alignment: .top, spacing: 8) {
-                sectionHeader(
-                    "API Connection",
-                    subtitle: "Configure the active API endpoint, auth header, secret key, and model."
-                )
-                Spacer(minLength: 8)
-                diagnosticsButton
-            }
-
+    private var standardAPIFields: some View {
+        Group {
             labeledInput("API Key") {
                 HStack(spacing: 6) {
                     if showsAPIKey {
@@ -545,15 +539,16 @@ struct SettingsView: View {
         }
     }
 
-    private var advancedJSONCard: some View {
-        settingsCard {
-            HStack(alignment: .top, spacing: 8) {
-                sectionHeader(
-                    "Advanced JSON Mode",
-                    subtitle: "Paste a full JSON request definition. Prompt presets only apply when the body uses the prompt placeholders."
-                )
-                Spacer(minLength: 8)
-                diagnosticsButton
+    private var advancedJSONSection: some View {
+        Group {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Advanced JSON")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(primaryTextColor)
+
+                Text("Paste a full request definition. Prompt presets only apply when the body includes the prompt placeholders.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(secondaryTextColor)
             }
 
             HStack(spacing: 6) {
@@ -889,6 +884,14 @@ struct SettingsView: View {
                 ))
             }
         }
+    }
+
+    private var localModelMenuTitle: String {
+        let trimmedModel = settings.aiLocalModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedModel.isEmpty {
+            return trimmedModel
+        }
+        return availableLocalModels.isEmpty ? "Choose Installed Model" : "Installed Models"
     }
 
     private func closeSettings() {

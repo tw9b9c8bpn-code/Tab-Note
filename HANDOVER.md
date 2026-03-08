@@ -1,5 +1,21 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-08, AI settings dropdown restore + JSON advanced merge)
+- Reworked AI settings layout in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`
+- Behavior changes:
+  - API now uses one unified settings card again, with the saved configuration dropdown restored at the top of the active API form so switching presets is immediate
+  - Standard and JSON setups still save to the same preset list, but JSON is now presented as an advanced section inside the API card instead of a separate primary surface
+  - local AI now has an explicit installed-model dropdown row again, with the current selected model shown directly in the picker label for faster switching
+- Preferences / dislikes reinforced from user feedback:
+  - desperately needs obvious quick-switch dropdowns for both saved API setups and local models
+  - wants JSON treated as advanced API configuration, not a separate product flow
+  - dislikes settings regressions where working controls technically still exist but feel visually hidden or detached from the main workflow
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had assumed keeping the API preset dropdown in a separate card was good enough, but that broke the fast-switch workflow because it no longer felt attached to the active API form.
+  - I had treated JSON as too separate in the UI even after unifying preset storage, when the actual preference was one API surface with advanced JSON nested inside it.
+  - I had left the local installed-model picker too easy to overlook because it read like a secondary utility button instead of a primary model-switch control.
+
 ## Completed in this pass (2026-03-08, unified API presets + compact AI settings + grouped pricing popup)
 - Reworked API preset storage in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsManager.swift`
