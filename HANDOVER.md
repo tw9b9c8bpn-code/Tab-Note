@@ -1,5 +1,19 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-08, API transport error clarification)
+- Updated network error handling in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/AI_BACKEND_IMPLEMENTATION.md`
+- Behavior changes:
+  - AI/API requests now map common `URLError` cases like `-1005` into clearer user-facing messages instead of generic localized transport text
+  - this does not suppress Apple CFNetwork console logs, but it avoids misreporting them as opaque backend failures inside the app
+- Documentation changes:
+  - documented that `stalled, attempting fallback` and `NSURLErrorDomain -1005` can be transport fallback events even when the provider request eventually works
+- Preferences / dislikes reinforced from user feedback:
+  - wants backend failures explained concretely instead of feeling like random black-box errors
+- Mistakes / wrong assumptions fixed in this pass:
+  - it would have been easy to misdiagnose the `-1005` console output as another JSON/payload bug, but the actual issue pattern is transport-layer fallback from `URLSession`/CFNetwork.
+
 ## Completed in this pass (2026-03-08, JSON response extraction + prompt-placeholder clarification)
 - Fixed Advanced JSON response parsing in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/AIService.swift`

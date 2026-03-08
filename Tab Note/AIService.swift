@@ -443,7 +443,7 @@ class AIService {
 
         URLSession.shared.dataTask(with: req) { data, response, error in
             if let error {
-                completion(.failure(AIError.requestFailed(error.localizedDescription)))
+                completion(.failure(AIError.requestFailed(self.requestFailureMessage(for: error))))
                 return
             }
             guard let http = response as? HTTPURLResponse else {
@@ -498,7 +498,10 @@ class AIService {
                 if let error = error as? URLError, error.code == .cancelled {
                     completion(.failure(AIError.cancelled)); return
                 }
-                if let error = error { completion(.failure(AIError.requestFailed(error.localizedDescription))); return }
+                if let error = error {
+                    completion(.failure(AIError.requestFailed(self?.requestFailureMessage(for: error) ?? error.localizedDescription)))
+                    return
+                }
                 guard let data = data else { completion(.failure(AIError.invalidResponse)); return }
                 if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let msg = json["message"] as? [String: Any],
@@ -636,7 +639,10 @@ class AIService {
                 if let error = error as? URLError, error.code == .cancelled {
                     completion(.failure(AIError.cancelled)); return
                 }
-                if let error = error { completion(.failure(AIError.requestFailed(error.localizedDescription))); return }
+                if let error = error {
+                    completion(.failure(AIError.requestFailed(self?.requestFailureMessage(for: error) ?? error.localizedDescription)))
+                    return
+                }
                 guard let data = data else {
                     completion(.failure(AIError.invalidResponse)); return
                 }
@@ -715,7 +721,10 @@ class AIService {
                 if let error = error as? URLError, error.code == .cancelled {
                     completion(.failure(AIError.cancelled)); return
                 }
-                if let error = error { completion(.failure(AIError.requestFailed(error.localizedDescription))); return }
+                if let error = error {
+                    completion(.failure(AIError.requestFailed(self?.requestFailureMessage(for: error) ?? error.localizedDescription)))
+                    return
+                }
                 guard let data else {
                     completion(.failure(AIError.invalidResponse)); return
                 }
@@ -794,7 +803,7 @@ class AIService {
                     return
                 }
                 if let error {
-                    completion(.failure(AIError.requestFailed(error.localizedDescription)))
+                    completion(.failure(AIError.requestFailed(self?.requestFailureMessage(for: error) ?? error.localizedDescription)))
                     return
                 }
                 guard let http = response as? HTTPURLResponse else {
@@ -860,7 +869,7 @@ class AIService {
         URLSession.shared.dataTask(with: prepared.request) { [weak self] data, response, error in
             DispatchQueue.main.async {
                 if let error {
-                    completion(.failure(AIError.requestFailed(error.localizedDescription)))
+                    completion(.failure(AIError.requestFailed(self?.requestFailureMessage(for: error) ?? error.localizedDescription)))
                     return
                 }
                 guard let http = response as? HTTPURLResponse else {
@@ -1137,6 +1146,27 @@ class AIService {
         return nil
     }
 
+    private func requestFailureMessage(for error: Error) -> String {
+        guard let urlError = error as? URLError else {
+            return error.localizedDescription
+        }
+
+        switch urlError.code {
+        case .networkConnectionLost:
+            return "The network connection dropped during the request. This is usually a transient macOS/provider transport interruption. Retry once."
+        case .timedOut:
+            return "The request timed out before the provider finished responding. Retry once or reduce the response length."
+        case .notConnectedToInternet:
+            return "No internet connection is available for the request."
+        case .cannotConnectToHost:
+            return "Could not connect to the provider host. Check the endpoint and try again."
+        case .cannotFindHost:
+            return "Could not find the provider host. Check the endpoint and try again."
+        default:
+            return urlError.localizedDescription
+        }
+    }
+
     private func jsonValue(at path: String, in root: Any) -> Any? {
         let segments = path.split(separator: ".").map(String.init)
         guard !segments.isEmpty else { return nil }
@@ -1354,7 +1384,7 @@ class AIService {
             } catch {
                 await MainActor.run {
                     self?.currentStreamingTask = nil
-                    completion(.failure(AIError.requestFailed(error.localizedDescription)))
+                    completion(.failure(AIError.requestFailed(self?.requestFailureMessage(for: error) ?? error.localizedDescription)))
                 }
             }
         }
@@ -1519,7 +1549,7 @@ class AIService {
         URLSession.shared.dataTask(with: probe.request) { data, response, error in
             DispatchQueue.main.async {
                 if let error {
-                    completion(.failure(AIError.requestFailed(error.localizedDescription)))
+                    completion(.failure(AIError.requestFailed(self.requestFailureMessage(for: error))))
                     return
                 }
                 guard let http = response as? HTTPURLResponse else {
@@ -1732,7 +1762,7 @@ class AIService {
             } catch {
                 await MainActor.run {
                     self?.currentStreamingTask = nil
-                    completion(.failure(AIError.requestFailed(error.localizedDescription)))
+                    completion(.failure(AIError.requestFailed(self?.requestFailureMessage(for: error) ?? error.localizedDescription)))
                 }
             }
         }
@@ -1800,7 +1830,7 @@ class AIService {
             } catch {
                 await MainActor.run {
                     self?.currentStreamingTask = nil
-                    completion(.failure(AIError.requestFailed(error.localizedDescription)))
+                    completion(.failure(AIError.requestFailed(self?.requestFailureMessage(for: error) ?? error.localizedDescription)))
                 }
             }
         }
@@ -1868,7 +1898,7 @@ class AIService {
             } catch {
                 await MainActor.run {
                     self?.currentStreamingTask = nil
-                    completion(.failure(AIError.requestFailed(error.localizedDescription)))
+                    completion(.failure(AIError.requestFailed(self?.requestFailureMessage(for: error) ?? error.localizedDescription)))
                 }
             }
         }
