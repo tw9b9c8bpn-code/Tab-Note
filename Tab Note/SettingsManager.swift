@@ -162,6 +162,7 @@ class SettingsManager: ObservableObject {
     private let aiAPISelectedProfileIDKey = "aiAPISelectedProfileID"
     private let aiAPIRequestStyleKey = "aiAPIRequestStyle"
     private let aiAPIAdvancedJSONConfigurationKey = "aiAPIAdvancedJSONConfiguration"
+    private let cachedLocalModelsKey = "cachedLocalModels"
     private let settingsPanelWidthKey = "settingsPanelWidth"
     private let settingsPanelHeightKey = "settingsPanelHeight"
 
@@ -238,6 +239,15 @@ class SettingsManager: ObservableObject {
             } else {
                 defaults.removeObject(forKey: aiAPISelectedProfileIDKey)
             }
+        }
+    }
+    var cachedLocalModelNames: [String] {
+        get {
+            sanitizeLocalModelNames(defaults.stringArray(forKey: cachedLocalModelsKey) ?? [])
+        }
+        set {
+            objectWillChange.send()
+            defaults.set(sanitizeLocalModelNames(newValue), forKey: cachedLocalModelsKey)
         }
     }
     var settingsPanelSize: NSSize {
@@ -466,6 +476,26 @@ class SettingsManager: ObservableObject {
     func upsertCurrentAPIProfile(named preferredName: String?) -> AIAPIProfile {
         let draft = currentAPIProfileDraft(named: preferredName)
         var profiles = aiAPISavedProfiles
+        let hasExplicitName = !(preferredName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+
+        if hasExplicitName,
+           let matchingNameIndex = profiles.firstIndex(where: {
+               $0.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                   .caseInsensitiveCompare(draft.name.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame
+           }) {
+            let updated = profile(draft, withID: profiles[matchingNameIndex].id)
+            profiles[matchingNameIndex] = updated
+            aiAPISavedProfiles = profiles
+            aiAPISelectedProfileID = updated.id
+            return updated
+        }
+
+        if hasExplicitName {
+            profiles.append(draft)
+            aiAPISavedProfiles = profiles
+            aiAPISelectedProfileID = draft.id
+            return draft
+        }
 
         if let selectedID = aiAPISelectedProfileID,
            let selectedIndex = profiles.firstIndex(where: { $0.id == selectedID }) {
@@ -614,6 +644,17 @@ class SettingsManager: ObservableObject {
     private func normalizedAPIHeaderName(_ value: String) -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "Authorization" : trimmed
+    }
+
+    private func sanitizeLocalModelNames(_ models: [String]) -> [String] {
+        var seen = Set<String>()
+        return models.compactMap { rawValue in
+            let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            let key = trimmed.lowercased()
+            guard seen.insert(key).inserted else { return nil }
+            return trimmed
+        }
     }
 
     var launchAtLogin: Bool {

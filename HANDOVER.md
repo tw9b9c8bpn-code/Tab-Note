@@ -1,5 +1,31 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-08, preset fork fix + busy-model spillover + footnote quick picker)
+- Reworked saved-preset persistence and local-model caching in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsManager.swift`
+- Reworked local-model refresh/state handling in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`
+- Reworked inline request routing in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/NoteEditorView.swift`
+- Reworked quick model selection UI in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/FootnoteBarView.swift`
+- Updated backend documentation in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/AI_BACKEND_IMPLEMENTATION.md`
+- Behavior changes:
+  - testing an API config with a new configuration name now creates a new saved preset instead of overwriting the currently selected saved preset
+  - local models are now cached in settings so Saved, the footnote picker, and inline request routing all use the same local-model list even outside the Settings screen
+  - if the active Local/API model is already busy with an inline request, a new inline question now tries the next saved model in that same mode group before reusing the busy model
+  - the footnote bar now has a compact quick model picker at the far left, with Local and saved API options shown in the same compact popover style as the other AI selectors
+- Preferences / dislikes reinforced from user feedback:
+  - wants renamed configs to fork into new saved models instead of silently replacing the old preset
+  - wants fast model switching available directly from the footnote, not buried only inside Settings
+  - wants model spillover when concurrent AI popup streaming hurts throughput, instead of stacking multiple requests onto one busy model
+  - wants exact provider-shape guidance documented so future AI do not repeat protocol assumptions
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had kept the selected preset as the first overwrite target even when the user intentionally changed the configuration name, which destroyed the old preset instead of creating a new fork.
+  - I had left local-model availability as view-local Settings state, which made quick selection and routing brittle outside the Settings screen.
+  - I had assumed concurrent popups alone solved throughput, but the user wanted routing across saved models, not just multiple windows hitting the same active model.
+
 ## Completed in this pass (2026-03-08, segmented settings tabs + auto-save API test + multi AI popups)
 - Reworked settings layout and diagnostics flow in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/SettingsView.swift`

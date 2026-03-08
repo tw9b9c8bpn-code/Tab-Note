@@ -343,7 +343,7 @@ struct NoteEditorView: NSViewRepresentable {
                 return
             }
             let requestWindowID = parent.windowID
-            let requestOptions = AIService.InlineAnswerOptions(settings: parent.settings)
+            let requestOptions = InlineAnswerPanelManager.shared.routedOptions(for: parent.settings)
             let anchorLocation = preferredLocation ?? context.insertionLocation
 
             HighlightCapturingTextView.startSharedInlineAnswerRequest(
@@ -1500,6 +1500,26 @@ final class InlineAnswerPanelManager {
         )
     }
 
+    func routedOptions(for settings: SettingsManager) -> AIService.InlineAnswerOptions {
+        let baseOptions = AIService.InlineAnswerOptions(settings: settings)
+        let activeOptions = controllers.values.compactMap(\.activeRequestOptions)
+
+        switch settings.aiModeEnum {
+        case .local:
+            return routedLocalOptions(
+                baseOptions: baseOptions,
+                settings: settings,
+                activeOptions: activeOptions
+            )
+        case .api:
+            return routedAPIOptions(
+                baseOptions: baseOptions,
+                settings: settings,
+                activeOptions: activeOptions
+            )
+        }
+    }
+
     func closeAll() {
         let activeControllers = Array(controllers.values)
         activeControllers.forEach { $0.close() }
@@ -1527,6 +1547,114 @@ final class InlineAnswerPanelManager {
         controllers[controller.id] = controller
         return controller
     }
+
+    private func routedLocalOptions(
+        baseOptions: AIService.InlineAnswerOptions,
+        settings: SettingsManager,
+        activeOptions: [AIService.InlineAnswerOptions]
+    ) -> AIService.InlineAnswerOptions {
+        let busyKeys = Set(activeOptions.filter { $0.aiMode == .local }.map(routeKey(for:)))
+        guard busyKeys.contains(routeKey(for: baseOptions)) else { return baseOptions }
+
+        let currentModel = settings.aiLocalModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        var localModels = settings.cachedLocalModelNames
+        if !currentModel.isEmpty,
+           !localModels.contains(where: {
+               $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                   .caseInsensitiveCompare(currentModel) == .orderedSame
+           }) {
+            localModels.insert(currentModel, at: 0)
+        }
+
+        guard localModels.count > 1 else { return baseOptions }
+
+        let startIndex = localModels.firstIndex(where: {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                .caseInsensitiveCompare(currentModel) == .orderedSame
+        }) ?? 0
+
+        for modelName in rotated(localModels, startingAt: startIndex).dropFirst() {
+            let candidate = AIService.InlineAnswerOptions(
+                aiMode: .local,
+                endpoint: settings.aiLocalEndpoint,
+                apiKey: "",
+                apiHeaderName: "Authorization",
+                model: modelName,
+                apiRequestStyle: .standard,
+                advancedJSONConfiguration: "",
+                promptSelection: baseOptions.promptSelection
+            )
+            guard !busyKeys.contains(routeKey(for: candidate)) else { continue }
+            return candidate
+        }
+
+        return baseOptions
+    }
+
+    private func routedAPIOptions(
+        baseOptions: AIService.InlineAnswerOptions,
+        settings: SettingsManager,
+        activeOptions: [AIService.InlineAnswerOptions]
+    ) -> AIService.InlineAnswerOptions {
+        let busyKeys = Set(activeOptions.filter { $0.aiMode == .api }.map(routeKey(for:)))
+        guard busyKeys.contains(routeKey(for: baseOptions)) else { return baseOptions }
+
+        let profiles = settings.aiAPISavedProfiles
+        guard profiles.count > 1 else { return baseOptions }
+
+        let startIndex = profiles.firstIndex(where: { $0.id == settings.aiAPISelectedProfileID }) ?? 0
+
+        for profile in rotated(profiles, startingAt: startIndex).dropFirst() {
+            let candidate = AIService.InlineAnswerOptions(
+                aiMode: .api,
+                endpoint: profile.endpoint,
+                apiKey: profile.apiKey,
+                apiHeaderName: profile.headerName,
+                model: resolvedModelName(for: profile),
+                apiRequestStyle: profile.requestStyle,
+                advancedJSONConfiguration: profile.advancedJSONConfiguration,
+                promptSelection: baseOptions.promptSelection
+            )
+            guard !busyKeys.contains(routeKey(for: candidate)) else { continue }
+            return candidate
+        }
+
+        return baseOptions
+    }
+
+    private func resolvedModelName(for profile: AIAPIProfile) -> String {
+        let trimmedModel = profile.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedModel.isEmpty, profile.requestStyle == .json else {
+            return trimmedModel
+        }
+        let trimmedConfiguration = profile.advancedJSONConfiguration.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedConfiguration.isEmpty,
+              let data = trimmedConfiguration.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) as? [String: Any],
+              let body = json["body"] as? [String: Any],
+              let model = body["model"] as? String else {
+            return ""
+        }
+        return model.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func routeKey(for options: AIService.InlineAnswerOptions) -> String {
+        [
+            options.aiMode.rawValue,
+            options.endpoint.trimmingCharacters(in: .whitespacesAndNewlines),
+            options.apiHeaderName.trimmingCharacters(in: .whitespacesAndNewlines),
+            options.model.trimmingCharacters(in: .whitespacesAndNewlines),
+            options.apiRequestStyle.rawValue,
+            options.advancedJSONConfiguration.trimmingCharacters(in: .whitespacesAndNewlines)
+        ]
+        .joined(separator: "|")
+    }
+
+    private func rotated<T>(_ values: [T], startingAt index: Int) -> [T] {
+        guard !values.isEmpty else { return [] }
+        let normalizedIndex = min(max(0, index), values.count - 1)
+        return Array(values[normalizedIndex...]) + Array(values[..<normalizedIndex])
+    }
 }
 
 final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
@@ -1551,6 +1679,11 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
 
     var isRequestInFlight: Bool {
         aiService.isRequestInFlight
+    }
+
+    var activeRequestOptions: AIService.InlineAnswerOptions? {
+        guard isRequestInFlight else { return nil }
+        return model.currentRequestOptions
     }
 
     func startRequest(

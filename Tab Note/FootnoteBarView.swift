@@ -15,6 +15,7 @@ struct FootnoteBarView: View {
     @State private var showInfoPopover = false
     @State private var isAIProcessing = false
     @State private var aiStatusText = ""
+    @State private var showModelPickerPopover = false
     @State private var showResponseModePopover = false
     @State private var showExpertModePopover = false
     @State private var showVoiceModePopover = false
@@ -24,6 +25,8 @@ struct FootnoteBarView: View {
     var body: some View {
         HStack(spacing: 0) {
             HStack(spacing: 2) {
+                modelQuickPicker
+                Spacer().frame(width: 10)
                 lengthPresetQuickPicker
                 Spacer().frame(width: 10)
                 responseModeMenu
@@ -166,6 +169,95 @@ struct FootnoteBarView: View {
                 }
                 .buttonStyle(.plain)
             }
+        }
+    }
+
+    private var modelQuickPicker: some View {
+        Button(action: toggleModelPickerPopover) {
+            HStack(spacing: 4) {
+                Text(activeModelPickerTitle)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 6.5, weight: .semibold))
+            }
+            .font(.system(size: 7.5, weight: .medium))
+            .foregroundColor(settings.isDarkMode ? .white.opacity(0.68) : .black.opacity(0.62))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .frame(maxWidth: 92)
+            .background(
+                Capsule()
+                    .fill(settings.isDarkMode ? .white.opacity(0.06) : .black.opacity(0.05))
+            )
+            .overlay(
+                Capsule()
+                    .stroke(settings.isDarkMode ? .white.opacity(0.08) : .black.opacity(0.08), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .help("Active model: \(activeModelPickerTooltip)")
+        .popover(isPresented: $showModelPickerPopover, arrowEdge: .top) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    modelPickerSectionHeader("Local Models")
+
+                    if settings.cachedLocalModelNames.isEmpty {
+                        Text("No local models cached yet")
+                            .font(.system(size: 9.5))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 4)
+                    } else {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(settings.cachedLocalModelNames, id: \.self) { modelName in
+                                Button {
+                                    settings.aiModeEnum = .local
+                                    settings.aiLocalModel = modelName
+                                    settings.cachedLocalModelNames = settings.cachedLocalModelNames + [modelName]
+                                    showModelPickerPopover = false
+                                } label: {
+                                    selectorRow(
+                                        title: modelName,
+                                        isSelected: settings.aiModeEnum == .local
+                                            && settings.aiLocalModel.trimmingCharacters(in: .whitespacesAndNewlines) == modelName
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    modelPickerSectionHeader("Saved API Models")
+
+                    if settings.aiAPISavedProfiles.isEmpty {
+                        Text("No saved API models yet")
+                            .font(.system(size: 9.5))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 4)
+                    } else {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(settings.aiAPISavedProfiles) { profile in
+                                Button {
+                                    settings.aiModeEnum = .api
+                                    _ = settings.applyAPIProfile(id: profile.id)
+                                    showModelPickerPopover = false
+                                } label: {
+                                    selectorRow(
+                                        title: profile.name,
+                                        isSelected: settings.aiModeEnum == .api
+                                            && settings.aiSelectedAPIProfile?.id == profile.id
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .help("\(profile.name) • \(savedProfileModelName(for: profile))")
+                            }
+                        }
+                    }
+                }
+                .padding(8)
+            }
+            .frame(width: 230, height: 240)
         }
     }
 
@@ -327,6 +419,13 @@ struct FootnoteBarView: View {
         .contentShape(Rectangle())
     }
 
+    private func modelPickerSectionHeader(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.system(size: 8, weight: .semibold))
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 4)
+    }
+
     private func matrixMenuIcon(symbol: String, isActive: Bool) -> some View {
         let opacity = isActive ? 0.82 : 0.14
         return Image(systemName: symbol)
@@ -354,6 +453,7 @@ struct FootnoteBarView: View {
         let next = !showResponseModePopover
         showResponseModePopover = next
         if next {
+            showModelPickerPopover = false
             showExpertModePopover = false
             showVoiceModePopover = false
         }
@@ -363,6 +463,7 @@ struct FootnoteBarView: View {
         let next = !showExpertModePopover
         showExpertModePopover = next
         if next {
+            showModelPickerPopover = false
             showResponseModePopover = false
             showVoiceModePopover = false
         }
@@ -372,9 +473,63 @@ struct FootnoteBarView: View {
         let next = !showVoiceModePopover
         showVoiceModePopover = next
         if next {
+            showModelPickerPopover = false
             showResponseModePopover = false
             showExpertModePopover = false
         }
+    }
+
+    private func toggleModelPickerPopover() {
+        let next = !showModelPickerPopover
+        showModelPickerPopover = next
+        if next {
+            showResponseModePopover = false
+            showExpertModePopover = false
+            showVoiceModePopover = false
+        }
+    }
+
+    private var activeModelPickerTitle: String {
+        let rawTitle: String
+        switch settings.aiModeEnum {
+        case .local:
+            rawTitle = settings.aiLocalModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .api:
+            rawTitle = settings.aiSelectedAPIProfile?.name
+                ?? settings.currentAIModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return rawTitle.isEmpty ? "Model" : rawTitle
+    }
+
+    private var activeModelPickerTooltip: String {
+        switch settings.aiModeEnum {
+        case .local:
+            return settings.aiLocalModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "No local model selected"
+                : settings.aiLocalModel
+        case .api:
+            if let profile = settings.aiSelectedAPIProfile {
+                return "\(profile.name) • \(savedProfileModelName(for: profile))"
+            }
+            let model = settings.currentAIModel.trimmingCharacters(in: .whitespacesAndNewlines)
+            return model.isEmpty ? "No API model selected" : model
+        }
+    }
+
+    private func savedProfileModelName(for profile: AIAPIProfile) -> String {
+        let trimmedModel = profile.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedModel.isEmpty {
+            return trimmedModel
+        }
+        guard profile.requestStyle == .json,
+              let data = profile.advancedJSONConfiguration.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) as? [String: Any],
+              let body = json["body"] as? [String: Any],
+              let model = body["model"] as? String else {
+            return "JSON template"
+        }
+        let resolved = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        return resolved.isEmpty ? "JSON template" : resolved
     }
 
 }

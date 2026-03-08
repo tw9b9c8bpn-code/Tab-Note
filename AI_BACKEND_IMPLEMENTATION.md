@@ -23,6 +23,7 @@ This document exists because the AI backend went through several incorrect itera
 - OpenAI-compatible payloads are not fully uniform across model families; GPT-5-family models need `max_completion_tokens` instead of `max_tokens`.
 - OpenAI-compatible GPT-5/reasoning-family models also reject custom sampling fields like `temperature`; omit them and let the provider use its default.
 - API mode now also supports an Advanced JSON mode that bypasses built-in provider mapping entirely.
+- Advanced JSON is still part of API mode, not a separate provider mode. The API form is the data-entry surface; Saved and the footnote picker are the selection surfaces.
 - Advanced JSON mode owns the full request shape:
   - endpoint
   - headers
@@ -32,10 +33,14 @@ This document exists because the AI backend went through several incorrect itera
 - Advanced JSON mode is intentionally not a thin wrapper around OpenAI-compatible assumptions. Do not inject provider-specific fields into it.
 - Advanced JSON mode supports placeholder replacement for runtime values such as `{{system_prompt}}`, `{{user_message}}`, `{{stream}}`, `{{temperature}}`, `{{max_tokens}}`, and `{{max_completion_tokens}}`.
 - Prompt injection presets only affect Advanced JSON mode when the JSON body actually uses placeholders like `{{system_prompt}}` and `{{user_message}}`; hardcoded messages bypass them.
+- OpenRouter `chat/completions` is OpenAI-chat-compatible, not OpenAI-Responses-compatible. Use `messages` there, not `input`, and use `choices.*` response paths, not `output.*`.
 - If `response.text_path` is omitted, the app may auto-detect common OpenAI/Anthropic response shapes, but it should never dump raw JSON into the inline AI popup as a fallback.
 - Console logs like `stalled, attempting fallback` and `NSURLErrorDomain -1005` can come from CFNetwork transport fallback even when the provider request eventually works. Do not immediately treat them as payload-shape bugs.
 - JSON mode should still surface the real model name from `body.model` for inline metrics; using a placeholder label like `Custom JSON` hides pricing/routing context and makes speed-cost debugging misleading.
 - Inline popup markdown rendering should stay active during streaming, not only after completion, or providers that emit bold Markdown incrementally will look visually downgraded compared with the standard adapters.
+- Saved API profiles are name-sensitive. If the user tests with a new configuration name that does not already exist, save a new preset instead of overwriting the currently selected preset.
+- Cached local model names must live outside the settings view so Saved, the footnote quick picker, and busy-model routing all see the same local-model roster.
+- When the active model in a mode is already busy, new inline requests should try the next saved model in that same mode group before reusing the busy one. Replays and follow-ups should stay on the same model.
 
 ## Known-good fast preset
 
@@ -52,6 +57,34 @@ What to preserve around it:
 - keep the popup's markdown renderer active while streaming so `**Bold labels**` show up as soon as the closing marker arrives
 
 ## Implementation iterations
+
+### Iteration 9: Overwriting renamed API presets
+
+Wrong assumption:
+- Testing an edited API config should always update the currently selected saved preset first.
+
+Why it failed:
+- Users duplicate and fork configs by editing a saved JSON/API preset, changing the configuration name, and testing the new setup.
+- Updating the selected preset first destroyed the old setup instead of creating a new saved model.
+
+Current rule:
+- If the configuration name is new, successful test/save should append a new preset.
+- Only update an existing preset when the configuration name already matches an existing saved entry.
+
+### Iteration 10: Treating OpenRouter chat as Responses API
+
+Wrong assumption:
+- Any OpenAI-flavored provider would accept the OpenAI Responses-style body fields such as `input` and return `output.*` text paths on a `/chat/completions` endpoint.
+
+Why it failed:
+- OpenRouter's `/api/v1/chat/completions` expects chat-completions fields like `messages`.
+- Sending Responses-style `input` to that endpoint yields `HTTP 400: Input required: specify "prompt" or "messages"`.
+
+Current rule:
+- For OpenRouter `/chat/completions`, send `messages`, `model`, and standard chat-completions streaming paths like:
+  - `response.text_path: choices.0.message.content`
+  - `streaming.text_path: choices.0.delta.content`
+- If using OpenRouter's speed-oriented routing, prefer the `:nitro` variant on the chosen model rather than inventing a Responses-style payload.
 
 ### Iteration 1: Shared Local/API fields
 
@@ -228,7 +261,8 @@ Typical providers:
   - model
   - advanced JSON configuration
 - Selecting a saved profile must load the full API configuration into the active API fields.
-- Keep explicit save/update/delete actions so switching profiles does not silently overwrite another saved setup.
+- Successful API tests are the save trigger for the API form.
+- A new configuration name must create a new saved preset instead of silently mutating the currently selected one.
 
 ## Do not regress these
 
@@ -238,3 +272,5 @@ Typical providers:
 - Do not hardcode one auth header shape for every provider.
 - Do not render `<think>` or similar hidden reasoning in the popup.
 - Do not reduce saved API profiles to a single model dropdown that loses endpoint/header/key context.
+- Do not route concurrent inline requests to the same busy model when another saved model in the same mode is available.
+- Do not send Responses-style `input` payloads to OpenRouter `chat/completions`.

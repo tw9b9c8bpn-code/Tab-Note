@@ -109,6 +109,9 @@ struct SettingsView: View {
         .frame(minWidth: 560, minHeight: 520)
         .onAppear {
             selectedAISettingsTab = settings.aiModeEnum == .local ? .local : .api
+            if availableLocalModels.isEmpty {
+                availableLocalModels = settings.cachedLocalModelNames
+            }
             if settings.aiModeEnum == .local && availableLocalModels.isEmpty {
                 refreshLocalModels()
             }
@@ -137,6 +140,9 @@ struct SettingsView: View {
             }
         }
         .onChange(of: selectedAISettingsTab) { _, newTab in
+            if newTab == .saved && availableLocalModels.isEmpty {
+                availableLocalModels = settings.cachedLocalModelNames
+            }
             if newTab == .saved && availableLocalModels.isEmpty {
                 refreshLocalModels()
             }
@@ -427,7 +433,7 @@ struct SettingsView: View {
         settingsCard {
             sectionHeader(
                 "API Connection",
-                subtitle: "Edit API details here, then test. A successful test auto-saves or updates the matching saved model."
+                subtitle: "Edit API details here, then test. A successful test saves a new preset when the configuration name is new, or updates the matching saved model."
             )
 
             labeledInput("Configuration Name") {
@@ -1506,6 +1512,7 @@ struct SettingsView: View {
                 switch result {
                 case .success(let models):
                     availableLocalModels = models
+                    settings.cachedLocalModelNames = models
                     savedModelHealthStatuses = savedModelHealthStatuses.filter { key, _ in
                         !key.hasPrefix("local:") || models.contains(String(key.dropFirst("local:".count)))
                     }
@@ -1513,9 +1520,9 @@ struct SettingsView: View {
                         ? "No local models were returned by the current endpoint."
                         : "\(models.count) local model\(models.count == 1 ? "" : "s") found."
                 case .failure(let error):
-                    availableLocalModels = []
+                    availableLocalModels = settings.cachedLocalModelNames
                     savedModelHealthStatuses = savedModelHealthStatuses.filter { key, _ in
-                        !key.hasPrefix("local:")
+                        !key.hasPrefix("local:") || availableLocalModels.contains(String(key.dropFirst("local:".count)))
                     }
                     localModelsStatus = "Could not load local models: \(error.localizedDescription)"
                 }
@@ -1568,6 +1575,7 @@ struct SettingsView: View {
     private func activateLocalSavedModel(_ modelName: String) {
         settings.aiModeEnum = .local
         settings.aiLocalModel = modelName
+        settings.cachedLocalModelNames = settings.cachedLocalModelNames + [modelName]
         apiProfileStatus = "Selected local model \(modelName)."
         resetAIDiagnostics()
     }
@@ -1615,7 +1623,7 @@ struct SettingsView: View {
     }
 
     private func runSavedProfilesHealthTest() {
-        let localModels = availableLocalModels
+        let localModels = availableLocalModels.isEmpty ? settings.cachedLocalModelNames : availableLocalModels
         let profiles = settings.aiAPISavedProfiles
         guard !profiles.isEmpty || !localModels.isEmpty else {
             isDiagnosing = false
