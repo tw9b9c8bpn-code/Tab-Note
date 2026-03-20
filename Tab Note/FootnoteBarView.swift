@@ -13,122 +13,62 @@ struct FootnoteBarView: View {
     @EnvironmentObject var settings: SettingsManager
     let windowID: String
     @State private var showInfoPopover = false
-    @State private var isAIProcessing = false
-    @State private var aiStatusText = ""
-    @State private var showModelPickerPopover = false
-    @State private var showResponseModePopover = false
-    @State private var showExpertModePopover = false
-    @State private var showVoiceModePopover = false
-    private let aiModeControlFrame: CGFloat = 15
-    private let aiModeControlGlyph: CGFloat = 9
 
     var body: some View {
         HStack(spacing: 0) {
-            HStack(spacing: 2) {
-                modelQuickPicker
-                Spacer().frame(width: 10)
-                lengthPresetQuickPicker
-                Spacer().frame(width: 10)
-                responseModeMenu
-                expertModeMenu
-                voiceModeMenu
-                Spacer().frame(width: 10)
-                clearAIPromptButton
-
-                if isAIProcessing || !aiStatusText.isEmpty {
-                    HStack(spacing: 4) {
-                        if isAIProcessing {
-                            ProgressView()
-                                .scaleEffect(0.42)
-                                .frame(width: 12, height: 12)
-                        }
-
-                        if !aiStatusText.isEmpty {
-                            Text(aiStatusText)
-                                .font(.system(size: 7))
-                                .foregroundColor(settings.isDarkMode ? .white.opacity(0.4) : .black.opacity(0.35))
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .frame(maxWidth: 110, alignment: .leading)
-                                .transition(.opacity)
-                        }
-                    }
-                    .padding(.leading, 8)
-                }
-            }
-            .padding(.leading, 8)
-
             Spacer(minLength: 10)
 
-            HStack(spacing: 6) {
-                Button(action: { cycleFontForward() }) {
+            HStack(spacing: 2) {
+                FootnoteButton(
+                    isDarkMode: settings.isDarkMode,
+                    helpText: "Font: \(settings.selectedFontEnum.displayName)",
+                    action: cycleFontForward
+                ) {
                     Text(fontLabel)
                         .font(fontPreviewFont)
-                        .foregroundColor(settings.isDarkMode ? .white.opacity(0.6) : .black.opacity(0.5))
-                        .frame(width: 18)
-                        .padding(.vertical, 1)
                 }
-                .buttonStyle(.plain)
-                .help("Font: \(settings.selectedFontEnum.displayName)")
 
-                Button(action: { settings.isDarkMode.toggle() }) {
+                FootnoteButton(
+                    isDarkMode: settings.isDarkMode,
+                    helpText: settings.isDarkMode ? "Light Mode" : "Dark Mode",
+                    action: { settings.isDarkMode.toggle() }
+                ) {
                     Image(systemName: settings.isDarkMode ? "moon.fill" : "sun.max.fill")
                         .font(.system(size: 9))
-                        .foregroundColor(settings.isDarkMode ? .yellow.opacity(0.8) : .orange)
+                        .foregroundStyle(settings.isDarkMode ? Color.yellow.opacity(0.8) : Color.orange)
                 }
-                .buttonStyle(.plain)
-                .help(settings.isDarkMode ? "Light Mode" : "Dark Mode")
 
-                Button(action: { showInfoPopover.toggle() }) {
+                FootnoteButton(
+                    isDarkMode: settings.isDarkMode,
+                    helpText: "Quick guide",
+                    action: { showInfoPopover.toggle() }
+                ) {
                     Image(systemName: "info.circle")
                         .font(.system(size: 9))
-                        .foregroundColor(settings.isDarkMode ? .white.opacity(0.5) : .black.opacity(0.4))
                 }
-                .buttonStyle(.plain)
                 .popover(isPresented: $showInfoPopover, arrowEdge: .top) { QuickGuideView() }
 
-                Button(action: openSettings) {
+                FootnoteButton(
+                    isDarkMode: settings.isDarkMode,
+                    helpText: "Settings",
+                    action: openSettings
+                ) {
                     Image(systemName: "gear")
                         .font(.system(size: 9))
-                        .foregroundColor(settings.isDarkMode ? .white.opacity(0.5) : .black.opacity(0.4))
                 }
-                .buttonStyle(.plain)
             }
-            .padding(.trailing, 8)
+            .padding(.trailing, 6)
         }
         .frame(height: 21)
         .background(Color.clear)
-        .onReceive(NotificationCenter.default.publisher(for: .inlineAIStatusDidChange)) { note in
-            if let targetWindowID = note.object as? String, targetWindowID != windowID {
-                return
-            }
-            let info = note.userInfo ?? [:]
-            if let inFlight = info["inFlight"] as? Bool {
-                isAIProcessing = inFlight
-            }
-            if let status = info["status"] as? String {
-                withAnimation {
-                    aiStatusText = status
-                }
-            }
-            if let inFlight = info["inFlight"] as? Bool, !inFlight {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                    if !self.isAIProcessing {
-                        withAnimation {
-                            self.aiStatusText = ""
-                        }
-                    }
-                }
-            }
-        }
     }
 
-    // MARK: - Font helpers
+    // MARK: - Font
 
     private var fontLabel: String {
         switch settings.selectedFontEnum {
         case .sansSerif: return "Aa"
-        case .serif: return "Ag"
+        case .serif:     return "Ag"
         case .monospace: return "A_"
         }
     }
@@ -136,7 +76,7 @@ struct FootnoteBarView: View {
     private var fontPreviewFont: Font {
         switch settings.selectedFontEnum {
         case .sansSerif: return .system(size: 9, weight: .medium)
-        case .serif: return .custom("Georgia", size: 9)
+        case .serif:     return .custom("Georgia", size: 9)
         case .monospace: return .system(size: 9, weight: .medium, design: .monospaced)
         }
     }
@@ -144,7 +84,7 @@ struct FootnoteBarView: View {
     private func cycleFontForward() {
         switch settings.selectedFontEnum {
         case .sansSerif: settings.selectedFontEnum = .serif
-        case .serif: settings.selectedFontEnum = .monospace
+        case .serif:     settings.selectedFontEnum = .monospace
         case .monospace: settings.selectedFontEnum = .sansSerif
         }
     }
@@ -152,415 +92,41 @@ struct FootnoteBarView: View {
     private func openSettings() {
         AppDelegate.shared?.showFloatingSettings()
     }
+}
 
-    // MARK: - AI
+// MARK: - Footnote Button
 
-    private var promptConfig: PromptInjectionConfiguration {
-        settings.promptInjectionConfiguration
-    }
+private struct FootnoteButton<Label: View>: View {
+    let isDarkMode: Bool
+    let helpText: String
+    let action: () -> Void
+    @ViewBuilder let label: () -> Label
 
-    private var lengthPresetQuickPicker: some View {
-        HStack(spacing: 1) {
-            ForEach(promptConfig.responseLengthOptions, id: \.id) { option in
-                Button {
-                    settings.aiResponseLengthID = option.id
-                } label: {
-                    lengthQuickPickLabel(option)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
+    @State private var isHovering = false
 
-    private var modelQuickPicker: some View {
-        Button(action: toggleModelPickerPopover) {
-            matrixMenuIcon(symbol: "cpu", isActive: true)
-        }
-        .buttonStyle(.plain)
-        .help("Active model: \(activeModelPickerTooltip)")
-        .popover(isPresented: $showModelPickerPopover, arrowEdge: .top) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 6) {
-                    modelPickerSectionHeader("Local Models")
-
-                    if settings.cachedLocalModelNames.isEmpty {
-                        Text("No local models cached yet")
-                            .font(.system(size: 9.5))
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 4)
-                    } else {
-                        VStack(alignment: .leading, spacing: 2) {
-                            ForEach(settings.cachedLocalModelNames, id: \.self) { modelName in
-                                Button {
-                                    settings.aiModeEnum = .local
-                                    settings.aiLocalModel = modelName
-                                    settings.cachedLocalModelNames = settings.cachedLocalModelNames + [modelName]
-                                    showModelPickerPopover = false
-                                } label: {
-                                    selectorRow(
-                                        title: modelName,
-                                        isSelected: settings.aiModeEnum == .local
-                                            && settings.aiLocalModel.trimmingCharacters(in: .whitespacesAndNewlines) == modelName
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-
-                    Divider()
-
-                    modelPickerSectionHeader("Saved API Models")
-
-                    if settings.aiAPISavedProfiles.isEmpty {
-                        Text("No saved API models yet")
-                            .font(.system(size: 9.5))
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 4)
-                    } else {
-                        VStack(alignment: .leading, spacing: 2) {
-                            ForEach(settings.aiAPISavedProfiles) { profile in
-                                Button {
-                                    settings.aiModeEnum = .api
-                                    _ = settings.applyAPIProfile(id: profile.id)
-                                    showModelPickerPopover = false
-                                } label: {
-                                    selectorRow(
-                                        title: profile.name,
-                                        isSelected: settings.aiModeEnum == .api
-                                            && settings.aiSelectedAPIProfile?.id == profile.id
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                                .help("\(profile.name) • \(savedProfileModelName(for: profile))")
-                            }
-                        }
-                    }
-                }
-                .padding(8)
-            }
-            .scrollIndicators(.never)
-            .frame(
-                width: adaptivePopoverWidth(for: modelPickerTitles, minimum: 120, maximum: 260),
-                height: adaptivePopoverHeight(for: modelPickerTitles.count + 4, minimum: 120, maximum: 250)
-            )
-        }
-    }
-
-    private func lengthQuickPickLabel(_ option: PromptInjectionOption) -> some View {
-        let isSelected = settings.aiResponseLengthID == option.id
-        let activeText = settings.isDarkMode ? Color.white.opacity(0.95) : Color.black.opacity(0.95)
-        let inactiveText = settings.isDarkMode ? Color.white.opacity(0.32) : Color.black.opacity(0.32)
-        let stroke = settings.isDarkMode ? Color.white : Color.black
-        return Text(option.label)
-            .font(.system(size: 8, weight: .medium, design: .monospaced))
-            .foregroundColor(isSelected ? activeText : inactiveText)
-            .frame(width: 18, height: 18)
-            .overlay(
-                Circle()
-                    .stroke(stroke, lineWidth: isSelected ? 0.85 : 0)
-            )
-            .contentShape(Circle())
-            .help("Response length: \(option.helper ?? option.label)")
-    }
-
-    private var responseModeMenu: some View {
-        Button(action: toggleResponseModePopover) {
-            matrixMenuIcon(
-                symbol: "list.bullet.rectangle.portrait",
-                isActive: settings.aiResponseModeID != nil
-            )
-        }
-        .buttonStyle(.plain)
-        .help("Response mode: \(promptConfig.responseModeMenuLabel(for: settings.aiResponseModeID))")
-        .popover(isPresented: $showResponseModePopover, arrowEdge: .top) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    Button {
-                        settings.aiResponseModeID = nil
-                        showResponseModePopover = false
-                    } label: {
-                        selectorRow(
-                            title: "None",
-                            isSelected: settings.aiResponseModeID == nil
+    var body: some View {
+        Button(action: action) {
+            label()
+                .foregroundStyle(
+                    isDarkMode
+                        ? Color.white.opacity(isHovering ? 0.82 : 0.5)
+                        : Color.black.opacity(isHovering ? 0.72 : 0.4)
+                )
+                .frame(width: 22, height: 22)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(
+                            isHovering
+                                ? (isDarkMode ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
+                                : Color.clear
                         )
-                    }
-                    .buttonStyle(.plain)
-
-                    ForEach(promptConfig.responseModeOptions, id: \.id) { option in
-                        Button {
-                            settings.aiResponseModeID = option.id
-                            showResponseModePopover = false
-                        } label: {
-                            selectorRow(
-                                title: promptConfig.responseModeMenuLabel(for: option.id),
-                                isSelected: settings.aiResponseModeID == option.id
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(8)
-            }
-            .scrollIndicators(.never)
-            .frame(
-                width: adaptivePopoverWidth(for: responseModeTitles, minimum: 120, maximum: 240),
-                height: adaptivePopoverHeight(for: responseModeTitles.count, minimum: 90, maximum: 220)
-            )
-        }
-    }
-
-    private var expertModeMenu: some View {
-        Button(action: toggleExpertModePopover) {
-            matrixMenuIcon(
-                symbol: "graduationcap",
-                isActive: settings.aiExpertModeID != nil
-            )
+                )
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Expert mode: \(promptConfig.expertModeMenuLabel(for: settings.aiExpertModeID))")
-        .popover(isPresented: $showExpertModePopover, arrowEdge: .top) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    Button {
-                        settings.aiExpertModeID = nil
-                        showExpertModePopover = false
-                    } label: {
-                        selectorRow(
-                            title: "None",
-                            isSelected: settings.aiExpertModeID == nil
-                        )
-                    }
-                    .buttonStyle(.plain)
-
-                    ForEach(promptConfig.expertModeOptions, id: \.id) { option in
-                        Button {
-                            settings.aiExpertModeID = option.id
-                            showExpertModePopover = false
-                        } label: {
-                            selectorRow(
-                                title: promptConfig.expertModeMenuLabel(for: option.id),
-                                isSelected: settings.aiExpertModeID == option.id
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(8)
-            }
-            .scrollIndicators(.never)
-            .frame(
-                width: adaptivePopoverWidth(for: expertModeTitles, minimum: 120, maximum: 240),
-                height: adaptivePopoverHeight(for: expertModeTitles.count, minimum: 90, maximum: 250)
-            )
-        }
+        .onHover { isHovering = $0 }
+        .help(helpText)
     }
-
-    private var voiceModeMenu: some View {
-        Button(action: toggleVoiceModePopover) {
-            matrixMenuIcon(
-                symbol: "quote.bubble",
-                isActive: settings.aiVoiceModeID != nil
-            )
-        }
-        .buttonStyle(.plain)
-        .help("Voice mode: \(promptConfig.voiceModeMenuLabel(for: settings.aiVoiceModeID))")
-        .popover(isPresented: $showVoiceModePopover, arrowEdge: .top) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    Button {
-                        settings.aiVoiceModeID = nil
-                        showVoiceModePopover = false
-                    } label: {
-                        selectorRow(
-                            title: "None",
-                            isSelected: settings.aiVoiceModeID == nil
-                        )
-                    }
-                    .buttonStyle(.plain)
-
-                    ForEach(promptConfig.voiceModeOptions, id: \.id) { option in
-                        Button {
-                            settings.aiVoiceModeID = option.id
-                            showVoiceModePopover = false
-                        } label: {
-                            selectorRow(
-                                title: promptConfig.voiceModeMenuLabel(for: option.id),
-                                isSelected: settings.aiVoiceModeID == option.id
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(8)
-            }
-            .scrollIndicators(.never)
-            .frame(
-                width: adaptivePopoverWidth(for: voiceModeTitles, minimum: 120, maximum: 240),
-                height: adaptivePopoverHeight(for: voiceModeTitles.count, minimum: 90, maximum: 250)
-            )
-        }
-    }
-
-    private func selectorRow(title: String, isSelected: Bool) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "checkmark")
-                .font(.system(size: 8, weight: .semibold))
-                .opacity(isSelected ? 1 : 0)
-            Text(title)
-                .font(.system(size: 10))
-            Spacer(minLength: 0)
-        }
-        .foregroundColor(.primary.opacity(isSelected ? 0.95 : 0.7))
-        .padding(.horizontal, 4)
-        .padding(.vertical, 1)
-        .contentShape(Rectangle())
-    }
-
-    private func modelPickerSectionHeader(_ title: String) -> some View {
-        Text(title.uppercased())
-            .font(.system(size: 8, weight: .semibold))
-            .foregroundColor(.secondary)
-            .padding(.horizontal, 4)
-    }
-
-    private var responseModeTitles: [String] {
-        ["None"] + promptConfig.responseModeOptions.map {
-            promptConfig.responseModeMenuLabel(for: $0.id)
-        }
-    }
-
-    private var expertModeTitles: [String] {
-        ["None"] + promptConfig.expertModeOptions.map {
-            promptConfig.expertModeMenuLabel(for: $0.id)
-        }
-    }
-
-    private var voiceModeTitles: [String] {
-        ["None"] + promptConfig.voiceModeOptions.map {
-            promptConfig.voiceModeMenuLabel(for: $0.id)
-        }
-    }
-
-    private var modelPickerTitles: [String] {
-        let localTitles = settings.cachedLocalModelNames.isEmpty ? ["No local models cached yet"] : settings.cachedLocalModelNames
-        let apiTitles = settings.aiAPISavedProfiles.isEmpty ? ["No saved API models yet"] : settings.aiAPISavedProfiles.map(\.name)
-        return localTitles + apiTitles
-    }
-
-    private func adaptivePopoverWidth(
-        for titles: [String],
-        minimum: CGFloat,
-        maximum: CGFloat
-    ) -> CGFloat {
-        let longestCount = titles.map(\.count).max() ?? 0
-        let estimatedWidth = CGFloat(longestCount) * 6.1 + 48
-        return min(maximum, max(minimum, estimatedWidth))
-    }
-
-    private func adaptivePopoverHeight(
-        for rowCount: Int,
-        minimum: CGFloat,
-        maximum: CGFloat
-    ) -> CGFloat {
-        let estimatedHeight = CGFloat(max(rowCount, 1)) * 18 + 20
-        return min(maximum, max(minimum, estimatedHeight))
-    }
-
-    private func matrixMenuIcon(symbol: String, isActive: Bool) -> some View {
-        let opacity = isActive ? 0.82 : 0.14
-        return Image(systemName: symbol)
-            .font(.system(size: aiModeControlGlyph, weight: .medium))
-            .foregroundColor(settings.isDarkMode ? .white.opacity(opacity) : .black.opacity(opacity))
-            .frame(width: aiModeControlFrame, height: aiModeControlFrame)
-    }
-
-    private var clearAIPromptButton: some View {
-        Button(action: clearAIPromptSelections) {
-            Image(systemName: "trash")
-                .font(.system(size: aiModeControlGlyph, weight: .medium))
-                .foregroundColor(settings.isDarkMode ? .white.opacity(0.28) : .black.opacity(0.22))
-                .frame(width: aiModeControlFrame, height: aiModeControlFrame)
-        }
-        .buttonStyle(.plain)
-        .help("Clear AI prompt selections")
-    }
-
-    private func clearAIPromptSelections() {
-        settings.resetAIPromptSelection()
-    }
-
-    private func toggleResponseModePopover() {
-        let next = !showResponseModePopover
-        showResponseModePopover = next
-        if next {
-            showModelPickerPopover = false
-            showExpertModePopover = false
-            showVoiceModePopover = false
-        }
-    }
-
-    private func toggleExpertModePopover() {
-        let next = !showExpertModePopover
-        showExpertModePopover = next
-        if next {
-            showModelPickerPopover = false
-            showResponseModePopover = false
-            showVoiceModePopover = false
-        }
-    }
-
-    private func toggleVoiceModePopover() {
-        let next = !showVoiceModePopover
-        showVoiceModePopover = next
-        if next {
-            showModelPickerPopover = false
-            showResponseModePopover = false
-            showExpertModePopover = false
-        }
-    }
-
-    private func toggleModelPickerPopover() {
-        let next = !showModelPickerPopover
-        showModelPickerPopover = next
-        if next {
-            showResponseModePopover = false
-            showExpertModePopover = false
-            showVoiceModePopover = false
-        }
-    }
-
-    private var activeModelPickerTooltip: String {
-        switch settings.aiModeEnum {
-        case .local:
-            return settings.aiLocalModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                ? "No local model selected"
-                : settings.aiLocalModel
-        case .api:
-            if let profile = settings.aiSelectedAPIProfile {
-                return "\(profile.name) • \(savedProfileModelName(for: profile))"
-            }
-            let model = settings.currentAIModel.trimmingCharacters(in: .whitespacesAndNewlines)
-            return model.isEmpty ? "No API model selected" : model
-        }
-    }
-
-    private func savedProfileModelName(for profile: AIAPIProfile) -> String {
-        let trimmedModel = profile.model.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedModel.isEmpty {
-            return trimmedModel
-        }
-        guard profile.requestStyle == .json,
-              let data = profile.advancedJSONConfiguration.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) as? [String: Any],
-              let body = json["body"] as? [String: Any],
-              let model = body["model"] as? String else {
-            return "JSON template"
-        }
-        let resolved = model.trimmingCharacters(in: .whitespacesAndNewlines)
-        return resolved.isEmpty ? "JSON template" : resolved
-    }
-
 }
 
 // MARK: - AI Popup View
@@ -584,7 +150,6 @@ struct AIPopupView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(isDarkMode ? .white.opacity(0.9) : .black.opacity(0.8))
                 Spacer()
-                // Copy button
                 Button(action: {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(result.content, forType: .string)
@@ -610,7 +175,6 @@ struct AIPopupView: View {
 
             Divider().opacity(0.3)
 
-            // Scrollable content
             ScrollView {
                 Text(result.content)
                     .font(.system(size: 11))
@@ -642,30 +206,24 @@ struct AIPopupView: View {
 struct QuickGuideView: View {
     @EnvironmentObject var settings: SettingsManager
 
-    private var hotkeyLabel: String {
-        settings.hotkeyDisplayLabel
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Tab Note — Quick Guide")
                 .font(.system(size: 14, weight: .bold))
             Divider()
             Group {
-                shortcutRow(hotkeyLabel,   "Show / Hide Tab Note")
+                shortcutRow(settings.hotkeyDisplayLabel, "Show / Hide Tab Note")
                 shortcutRow("⌘T",          "New Note")
                 shortcutRow("⌘Space",      "Delete Note / Close Tab")
                 shortcutRow("⌘⇧T",         "Recover Deleted Tab")
                 shortcutRow("⌘1–9",        "Switch to Tab 1–9")
                 shortcutRow("⌘⌥← / →",    "Move Tab Left / Right")
-                shortcutRow("⌘⇧⌥← / →",    "Switch Tab Left / Right")
+                shortcutRow("⌘⇧⌥← / →",   "Switch Tab Left / Right")
                 shortcutRow("⌘L",          "Rename current tab")
                 shortcutRow("⌘B / ⌘I",    "Bold / Italic")
                 shortcutRow("⌘U",          "Highlight text")
                 shortcutRow("⌘F",          "Toggle Search bar")
                 shortcutRow("⌘⇧H",         "Toggle Tab Area (Focus Mode)")
-                shortcutRow("???",         "Answer current paragraph with AI")
-                shortcutRow("? + ⇥",       "Answer current paragraph with AI")
             }
             Divider()
             Group {
@@ -677,17 +235,12 @@ struct QuickGuideView: View {
                     .font(.system(size: 12))
             }
             Divider()
-            VStack(alignment: .leading, spacing: 4) {
-                Text("About")
-                    .font(.system(size: 11, weight: .semibold))
+            HStack(spacing: 4) {
+                Text("Created by")
+                    .font(.system(size: 11))
                     .foregroundColor(.secondary)
-                HStack(spacing: 4) {
-                    Text("Created by")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                    Link("Kien Tran", destination: URL(string: "https://kientran.ca")!)
-                        .font(.system(size: 11, weight: .medium))
-                }
+                Link("Kien Tran", destination: URL(string: "https://kientran.ca")!)
+                    .font(.system(size: 11, weight: .medium))
             }
         }
         .padding(16)
