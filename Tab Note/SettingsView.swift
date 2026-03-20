@@ -8,13 +8,61 @@
 import AppKit
 import SwiftUI
 
-private enum SettingsTab: String, CaseIterable, Identifiable {
+// MARK: - Design Tokens
+
+private enum Spacing {
+    static let xxs: CGFloat = 4
+    static let xs: CGFloat = 8
+    static let sm: CGFloat = 12
+    static let md: CGFloat = 16
+    static let lg: CGFloat = 24
+    static let xl: CGFloat = 32
+    static let xxl: CGFloat = 40
+}
+
+private enum Radius {
+    static let sm: CGFloat = 6
+    static let md: CGFloat = 10
+    static let lg: CGFloat = 14
+    static let xl: CGFloat = 18
+}
+
+// MARK: - Section Model
+
+private enum SettingsSection: String, CaseIterable, Identifiable {
     case general = "General"
-    case ai = "AI"
-    case deletedNotes = "Deleted Notes"
+    case appearance = "Appearance"
+    case behavior = "Behavior"
+    case data = "Data"
+    case advanced = "Advanced"
+    case about = "About"
 
     var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .general:    return "gear"
+        case .appearance: return "paintbrush"
+        case .behavior:   return "slider.horizontal.3"
+        case .data:       return "internaldrive"
+        case .advanced:   return "cpu"
+        case .about:      return "info.circle"
+        }
+    }
+
+    var intro: String {
+        switch self {
+        case .general:    return "Configure your global shortcut and startup preferences."
+        case .appearance: return "Customize how Tab Note looks and feels."
+        case .behavior:   return "Control window placement and layout density."
+        case .data:       return "Recover or permanently remove deleted notes."
+        case .advanced:   return "Configure AI providers, models, and connection profiles."
+        case .about:      return "App information and update preferences."
+        }
+    }
 }
+
+// MARK: - AI Sub-Tab
 
 private enum AISettingsTab: String, CaseIterable, Identifiable {
     case local = "Local"
@@ -24,17 +72,56 @@ private enum AISettingsTab: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-private struct SavedModelHealthStatus {
-    enum State {
-        case idle
-        case testing
-        case success
-        case failure
-    }
+// MARK: - Health Status
 
+private struct SavedModelHealthStatus {
+    enum State { case idle, testing, success, failure }
     let state: State
     let message: String?
 }
+
+// MARK: - Sidebar Row
+
+private struct SidebarRow: View {
+    let section: SettingsSection
+    let isSelected: Bool
+    let accentColor: Color
+    let primaryTextColor: Color
+    let secondaryTextColor: Color
+    let isDarkMode: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: section.icon)
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? accentColor : secondaryTextColor)
+                    .frame(width: 18, alignment: .center)
+
+                Text(section.rawValue)
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? primaryTextColor : secondaryTextColor)
+
+                Spacer()
+            }
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, 7)
+            .frame(minHeight: 32)
+            .background(
+                Group {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .fill(isDarkMode ? accentColor.opacity(0.16) : accentColor.opacity(0.10))
+                    }
+                }
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Main View
 
 struct SettingsView: View {
     @EnvironmentObject var settings: SettingsManager
@@ -43,7 +130,7 @@ struct SettingsView: View {
 
     let onClose: (() -> Void)?
 
-    @State private var selectedTab: SettingsTab = .general
+    @State private var selectedSection: SettingsSection = .general
     @State private var selectedAISettingsTab: AISettingsTab = .local
 
     @State private var isDiagnosing = false
@@ -69,21 +156,17 @@ struct SettingsView: View {
         ZStack {
             panelBackground
 
-            VStack(spacing: 8) {
-                header
-                tabBar
+            HStack(spacing: 0) {
+                sidebar
+                    .frame(width: 172)
 
-                ScrollView {
-                    VStack(spacing: 8) {
-                        selectedTabContent
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.bottom, 2)
-                }
-                .scrollIndicators(.never)
+                Rectangle()
+                    .fill(dividerColor)
+                    .frame(width: 1)
+
+                detailPanel
             }
-            .padding(12)
-            
+
             if showsDiagnosticsPopup {
                 VStack {
                     Spacer()
@@ -100,13 +183,13 @@ struct SettingsView: View {
                             onClose: { showsDiagnosticsPopup = false }
                         )
                     }
-                    .padding(12)
+                    .padding(Spacing.sm)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 .zIndex(10)
             }
         }
-        .frame(minWidth: 560, minHeight: 520)
+        .frame(minWidth: 640, minHeight: 520)
         .onAppear {
             selectedAISettingsTab = settings.aiModeEnum == .local ? .local : .api
             if availableLocalModels.isEmpty {
@@ -149,93 +232,110 @@ struct SettingsView: View {
         }
     }
 
-    private var header: some View {
-        HStack(alignment: .center, spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Settings")
-                    .font(.system(size: 21, weight: .semibold, design: .rounded))
-                    .foregroundStyle(primaryTextColor)
+    // MARK: - Sidebar
 
-                Text("Tune hotkeys, AI providers, and note recovery.")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(secondaryTextColor)
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Settings")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(primaryTextColor)
+                .padding(.horizontal, Spacing.md)
+                .padding(.top, Spacing.lg)
+                .padding(.bottom, Spacing.sm)
+
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                ForEach(SettingsSection.allCases) { section in
+                    SidebarRow(
+                        section: section,
+                        isSelected: selectedSection == section,
+                        accentColor: accentColor,
+                        primaryTextColor: primaryTextColor,
+                        secondaryTextColor: secondaryTextColor,
+                        isDarkMode: settings.isDarkMode
+                    ) {
+                        withAnimation(.easeInOut(duration: 0.16)) {
+                            selectedSection = section
+                        }
+                    }
+                }
             }
+            .padding(.horizontal, Spacing.xs)
 
             Spacer()
 
             Button(action: closeSettings) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(secondaryTextColor)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                            .fill(fieldFill)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                            .stroke(outlineColor, lineWidth: 1)
+                    )
             }
-            .buttonStyle(SettingsPillButtonStyle(
-                isDarkMode: settings.isDarkMode,
-                tone: .neutral,
-                isSelected: false,
-                compact: true
-            ))
+            .buttonStyle(.plain)
+            .padding(.horizontal, Spacing.md)
+            .padding(.bottom, Spacing.md)
             .help("Close Settings")
         }
     }
 
-    private var tabBar: some View {
-        HStack(spacing: 4) {
-            mergedSegmentedControl(
-                selection: Binding(
-                    get: { selectedTab },
-                    set: { newTab in
-                        withAnimation(.spring(response: 0.26, dampingFraction: 0.9)) {
-                            selectedTab = newTab
-                        }
-                    }
-                ),
-                options: [
-                    (SettingsTab.general.rawValue, SettingsTab.general),
-                    (SettingsTab.ai.rawValue, SettingsTab.ai)
-                ]
-            )
+    // MARK: - Detail Panel
 
-            Spacer(minLength: 8)
-
-            Button {
-                withAnimation(.spring(response: 0.26, dampingFraction: 0.9)) {
-                    selectedTab = .deletedNotes
-                }
-            } label: {
-                Text(SettingsTab.deletedNotes.rawValue)
+    private var detailPanel: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Spacing.lg) {
+                pageHeader
+                sectionContent
             }
-            .buttonStyle(SettingsPillButtonStyle(
-                isDarkMode: settings.isDarkMode,
-                tone: .accent,
-                isSelected: selectedTab == .deletedNotes,
-                minimumHeight: 32
-            ))
+            .padding(Spacing.lg)
+            .frame(maxWidth: 680, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .scrollIndicators(.never)
+    }
+
+    private var pageHeader: some View {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            Text(selectedSection.rawValue)
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(primaryTextColor)
+
+            Text(selectedSection.intro)
+                .font(.system(size: 12))
+                .foregroundStyle(secondaryTextColor)
+        }
     }
 
     @ViewBuilder
-    private var selectedTabContent: some View {
-        switch selectedTab {
-        case .general:
-            generalSettings
-        case .ai:
-            aiSettings
-        case .deletedNotes:
-            deletedNotesSettings
+    private var sectionContent: some View {
+        switch selectedSection {
+        case .general:    generalSection
+        case .appearance: appearanceSection
+        case .behavior:   behaviorSection
+        case .data:       dataSection
+        case .advanced:   advancedSection
+        case .about:      aboutSection
         }
     }
 
-    private var generalSettings: some View {
-        VStack(spacing: 8) {
+    // MARK: - General
+
+    private var generalSection: some View {
+        VStack(spacing: Spacing.lg) {
             settingsCard {
                 sectionHeader(
                     "Global Hotkey",
                     subtitle: "Choose the shortcut that reveals or hides Tab Note from anywhere."
                 )
 
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
                     fieldLabel("Modifiers")
-                    HStack(spacing: 6) {
+                    HStack(spacing: Spacing.xs) {
                         modifierPill(label: "⌘ Cmd", flag: 0x0100)
                         modifierPill(label: "⇧ Shift", flag: 0x0200)
                         modifierPill(label: "⌥ Option", flag: 0x0800)
@@ -243,21 +343,19 @@ struct SettingsView: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
                     fieldLabel("Key")
-                    HStack(spacing: 6) {
+                    HStack(spacing: Spacing.xs) {
                         Menu {
                             ForEach(hotkeyKeys, id: \.0) { code, label in
-                                Button(label) {
-                                    settings.hotkeyKeyCode = code
-                                }
+                                Button(label) { settings.hotkeyKeyCode = code }
                             }
                         } label: {
                             fieldMenuLabel("Key: \(SettingsManager.hotkeyKeyNames[settings.hotkeyKeyCode] ?? "?")")
                         }
                         .menuStyle(.borderlessButton)
 
-                        Text("Current shortcut: \(settings.hotkeyDisplayLabel)")
+                        Text("Current: \(settings.hotkeyDisplayLabel)")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(secondaryTextColor)
                     }
@@ -265,85 +363,149 @@ struct SettingsView: View {
             }
 
             settingsCard {
-                sectionHeader(
-                    "Window Behavior",
-                    subtitle: "Control where Tab Note appears and how dense the tab stack can get."
+                sectionHeader("Startup", subtitle: "Control how Tab Note behaves when you log in.")
+
+                toggleRow(
+                    title: "Launch at Login",
+                    subtitle: "Automatically start Tab Note when you log in.",
+                    isOn: Binding(get: { settings.launchAtLogin }, set: { settings.launchAtLogin = $0 })
                 )
+            }
+        }
+    }
+
+    // MARK: - Appearance
+
+    private var appearanceSection: some View {
+        VStack(spacing: Spacing.lg) {
+            settingsCard {
+                sectionHeader("Color Mode", subtitle: "Switch between dark and light interface styles.")
 
                 choiceGroup(
-                    title: "Show Window",
-                    subtitle: "Apply the reveal position to the main window and detached windows.",
-                    selection: Binding(
-                        get: { settings.positionModeEnum },
-                        set: { settings.positionModeEnum = $0 }
-                    ),
-                    options: PositionMode.allCases.map { ($0.displayName, $0) }
-                )
-
-                choiceGroup(
-                    title: "Max Tab Rows",
-                    subtitle: "Keep the tab bar compact before it spills into more rows.",
-                    selection: Binding(
-                        get: { settings.maxTabRows },
-                        set: { settings.maxTabRows = $0 }
-                    ),
-                    options: [("2 Rows", 2), ("3 Rows", 3), ("4 Rows", 4)]
+                    title: "Interface",
+                    subtitle: nil,
+                    selection: Binding(get: { settings.isDarkMode }, set: { settings.isDarkMode = $0 }),
+                    options: [("Light", false), ("Dark", true)]
                 )
             }
 
             settingsCard {
+                sectionHeader("Typography", subtitle: "Choose the font family used in the note editor.")
+
+                choiceGroup(
+                    title: "Editor Font",
+                    subtitle: nil,
+                    selection: Binding(get: { settings.selectedFontEnum }, set: { settings.selectedFontEnum = $0 }),
+                    options: FontChoice.allCases.map { ($0.displayName, $0) }
+                )
+            }
+        }
+    }
+
+    // MARK: - Behavior
+
+    private var behaviorSection: some View {
+        VStack(spacing: Spacing.lg) {
+            settingsCard {
+                sectionHeader("Window Position", subtitle: "Choose where Tab Note appears when you invoke it.")
+
+                choiceGroup(
+                    title: "Show Window",
+                    subtitle: "Applies to the main window and any detached windows.",
+                    selection: Binding(get: { settings.positionModeEnum }, set: { settings.positionModeEnum = $0 }),
+                    options: PositionMode.allCases.map { ($0.displayName, $0) }
+                )
+            }
+
+            settingsCard {
+                sectionHeader("Layout", subtitle: "Adjust tab bar density and window stacking behavior.")
+
+                choiceGroup(
+                    title: "Max Tab Rows",
+                    subtitle: "Keep the tab bar compact before spilling into more rows.",
+                    selection: Binding(get: { settings.maxTabRows }, set: { settings.maxTabRows = $0 }),
+                    options: [("2", 2), ("3", 3), ("4", 4)]
+                )
+
+                toggleRow(
+                    title: "Always on Top",
+                    subtitle: "Keep the Tab Note window above other applications.",
+                    isOn: Binding(get: { settings.alwaysOnTop }, set: { settings.alwaysOnTop = $0 })
+                )
+            }
+        }
+    }
+
+    // MARK: - Data
+
+    private var dataSection: some View {
+        VStack(spacing: Spacing.lg) {
+            settingsCard {
                 sectionHeader(
-                    "App Behavior",
-                    subtitle: "Set startup behavior and how updates are checked."
+                    "Deleted Notes",
+                    subtitle: "Recovered notes return to your library. Notes are permanently removed after 30 days."
                 )
 
-                booleanChoiceGroup(
-                    title: "Launch at Login",
-                    subtitle: "Automatically start Tab Note when you log in.",
-                    isOn: Binding(
-                        get: { settings.launchAtLogin },
-                        set: { settings.launchAtLogin = $0 }
-                    )
-                )
+                if store.deletedNotes.isEmpty {
+                    VStack(spacing: Spacing.xs) {
+                        Image(systemName: "trash.slash")
+                            .font(.system(size: 28))
+                            .foregroundStyle(secondaryTextColor)
 
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Updates")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(primaryTextColor)
-                            Text("Check for new versions from the Sparkle feed.")
-                                .font(.system(size: 12))
-                                .foregroundStyle(secondaryTextColor)
-                        }
+                        Text("No deleted notes")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(primaryTextColor)
 
-                        Spacer()
-
-                        Button("Check for Updates") {
-                            AppUpdater.shared.checkForUpdates()
-                        }
-                        .buttonStyle(SettingsPillButtonStyle(
-                            isDarkMode: settings.isDarkMode,
-                            tone: .accent,
-                            isSelected: false
-                        ))
+                        Text("Anything you delete will show up here until its recovery window expires.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(secondaryTextColor)
+                            .multilineTextAlignment(.center)
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Spacing.md)
+                } else {
+                    LazyVStack(spacing: Spacing.xs) {
+                        ForEach(store.deletedNotes) { note in
+                            HStack(spacing: Spacing.sm) {
+                                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                                    Text(note.title)
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(primaryTextColor)
 
-                    booleanChoiceGroup(
-                        title: "Auto-check on Launch",
-                        subtitle: "Run an update check a few seconds after the app opens.",
-                        isOn: Binding(
-                            get: { settings.autoCheckUpdates },
-                            set: { settings.autoCheckUpdates = $0 }
-                        )
-                    )
+                                    Text("Deleted \(note.deletedAt, style: .relative) ago")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(secondaryTextColor)
+                                }
+
+                                Spacer()
+
+                                Button("Recover") { store.recoverNote(note) }
+                                    .buttonStyle(SettingsPillButtonStyle(
+                                        isDarkMode: settings.isDarkMode,
+                                        tone: .accent,
+                                        isSelected: false
+                                    ))
+                            }
+                            .padding(Spacing.sm)
+                            .background(
+                                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                                    .fill(fieldFill)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                                    .stroke(outlineColor, lineWidth: 1)
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 
-    private var aiSettings: some View {
-        VStack(spacing: 8) {
+    // MARK: - Advanced (AI)
+
+    private var advancedSection: some View {
+        VStack(spacing: Spacing.lg) {
             settingsCard {
                 HStack {
                     Spacer()
@@ -353,12 +515,9 @@ struct SettingsView: View {
                             set: { newTab in
                                 selectedAISettingsTab = newTab
                                 switch newTab {
-                                case .local:
-                                    settings.aiModeEnum = .local
-                                case .api:
-                                    settings.aiModeEnum = .api
-                                case .saved:
-                                    syncAPIProfileDraft()
+                                case .local: settings.aiModeEnum = .local
+                                case .api:   settings.aiModeEnum = .api
+                                case .saved: syncAPIProfileDraft()
                                 }
                             }
                         ),
@@ -380,12 +539,12 @@ struct SettingsView: View {
 
     private var localAISettingsCard: some View {
         settingsCard {
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .top, spacing: Spacing.xs) {
                 sectionHeader(
                     "Local Connection",
                     subtitle: "Edit your local endpoint and model details here. Active local-model selection now happens in Saved."
                 )
-                Spacer(minLength: 8)
+                Spacer(minLength: Spacing.xs)
                 diagnosticsButton
             }
 
@@ -404,10 +563,9 @@ struct SettingsView: View {
             }
 
             Button(action: refreshLocalModels) {
-                HStack(spacing: 4) {
+                HStack(spacing: Spacing.xxs) {
                     if isLoadingLocalModels {
-                        ProgressView()
-                            .controlSize(.small)
+                        ProgressView().controlSize(.small)
                     } else {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 12, weight: .semibold))
@@ -415,11 +573,7 @@ struct SettingsView: View {
                     Text(isLoadingLocalModels ? "Refreshing Local Models..." : "Refresh Local Models")
                 }
             }
-            .buttonStyle(SettingsPillButtonStyle(
-                isDarkMode: settings.isDarkMode,
-                tone: .neutral,
-                isSelected: false
-            ))
+            .buttonStyle(SettingsPillButtonStyle(isDarkMode: settings.isDarkMode, tone: .neutral, isSelected: false))
             .disabled(isLoadingLocalModels)
 
             if !localModelsStatus.isEmpty {
@@ -482,17 +636,16 @@ struct SettingsView: View {
 
     private var savedProfilesCard: some View {
         settingsCard {
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .top, spacing: Spacing.xs) {
                 sectionHeader(
                     "Saved Models",
                     subtitle: "Selection lives here. Local models and saved API presets stay side by side with inline health icons."
                 )
-                Spacer(minLength: 8)
+                Spacer(minLength: Spacing.xs)
                 Button(action: runSavedProfilesHealthTest) {
-                    HStack(spacing: 4) {
+                    HStack(spacing: Spacing.xxs) {
                         if isDiagnosing {
-                            ProgressView()
-                                .controlSize(.small)
+                            ProgressView().controlSize(.small)
                         } else {
                             Image(systemName: "stethoscope")
                                 .font(.system(size: 11, weight: .semibold))
@@ -500,12 +653,7 @@ struct SettingsView: View {
                         Text(isDiagnosing ? "Testing" : "Test All")
                     }
                 }
-                .buttonStyle(SettingsPillButtonStyle(
-                    isDarkMode: settings.isDarkMode,
-                    tone: .accent,
-                    isSelected: false,
-                    compact: true
-                ))
+                .buttonStyle(SettingsPillButtonStyle(isDarkMode: settings.isDarkMode, tone: .accent, isSelected: false, compact: true))
                 .disabled(isDiagnosing || (settings.aiAPISavedProfiles.isEmpty && availableLocalModels.isEmpty))
             }
 
@@ -515,9 +663,9 @@ struct SettingsView: View {
                     .foregroundStyle(secondaryTextColor)
             }
 
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 6) {
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    HStack(spacing: Spacing.xs) {
                         Text("LOCAL MODELS")
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(secondaryTextColor)
@@ -525,10 +673,9 @@ struct SettingsView: View {
                         Spacer()
 
                         Button(action: refreshLocalModels) {
-                            HStack(spacing: 4) {
+                            HStack(spacing: Spacing.xxs) {
                                 if isLoadingLocalModels {
-                                    ProgressView()
-                                        .controlSize(.small)
+                                    ProgressView().controlSize(.small)
                                 } else {
                                     Image(systemName: "arrow.clockwise")
                                         .font(.system(size: 10, weight: .semibold))
@@ -536,12 +683,7 @@ struct SettingsView: View {
                                 Text(isLoadingLocalModels ? "Refreshing" : "Refresh")
                             }
                         }
-                        .buttonStyle(SettingsPillButtonStyle(
-                            isDarkMode: settings.isDarkMode,
-                            tone: .neutral,
-                            isSelected: false,
-                            compact: true
-                        ))
+                        .buttonStyle(SettingsPillButtonStyle(isDarkMode: settings.isDarkMode, tone: .neutral, isSelected: false, compact: true))
                         .disabled(isLoadingLocalModels)
                     }
 
@@ -550,7 +692,7 @@ struct SettingsView: View {
                             .font(.system(size: 12))
                             .foregroundStyle(secondaryTextColor)
                     } else {
-                        LazyVStack(spacing: 6) {
+                        LazyVStack(spacing: Spacing.xs) {
                             ForEach(availableLocalModels, id: \.self) { modelName in
                                 savedLocalModelRow(modelName)
                             }
@@ -561,13 +703,13 @@ struct SettingsView: View {
 
                 Divider()
 
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
                     Text("SAVED API MODELS")
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(secondaryTextColor)
 
                     if settings.aiAPISavedProfiles.isEmpty {
-                        VStack(spacing: 6) {
+                        VStack(spacing: Spacing.xs) {
                             Text("No saved API models yet")
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(primaryTextColor)
@@ -577,9 +719,9 @@ struct SettingsView: View {
                                 .foregroundStyle(secondaryTextColor)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Spacing.xxs)
                     } else {
-                        LazyVStack(spacing: 6) {
+                        LazyVStack(spacing: Spacing.xs) {
                             ForEach(settings.aiAPISavedProfiles) { profile in
                                 savedAPIProfileRow(profile)
                             }
@@ -596,6 +738,63 @@ struct SettingsView: View {
             }
         }
     }
+
+    // MARK: - About
+
+    private var aboutSection: some View {
+        VStack(spacing: Spacing.lg) {
+            settingsCard {
+                HStack(spacing: Spacing.md) {
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(accentColor.opacity(0.12))
+                        .frame(width: 52, height: 52)
+                        .overlay(
+                            Text("TN")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(accentColor)
+                        )
+
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
+                        Text("Tab Note")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(primaryTextColor)
+
+                        Text("Version \(appVersion) (\(buildNumber))")
+                            .font(.system(size: 12))
+                            .foregroundStyle(secondaryTextColor)
+                    }
+
+                    Spacer()
+                }
+            }
+
+            settingsCard {
+                sectionHeader("Updates", subtitle: "Check for new versions from the Sparkle feed.")
+
+                HStack {
+                    Button("Check for Updates") { AppUpdater.shared.checkForUpdates() }
+                        .buttonStyle(SettingsPillButtonStyle(isDarkMode: settings.isDarkMode, tone: .accent, isSelected: false))
+                    Spacer()
+                }
+
+                toggleRow(
+                    title: "Auto-check on Launch",
+                    subtitle: "Run an update check a few seconds after the app opens.",
+                    isOn: Binding(get: { settings.autoCheckUpdates }, set: { settings.autoCheckUpdates = $0 })
+                )
+            }
+        }
+    }
+
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+    }
+
+    private var buildNumber: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+    }
+
+    // MARK: - Saved Profile Rows
 
     private func savedLocalModelRow(_ modelName: String) -> some View {
         let isSelected = settings.aiModeEnum == .local
@@ -628,7 +827,7 @@ struct SettingsView: View {
         ) {
             activateSavedProfile(profile)
         } trailing: {
-            HStack(spacing: 6) {
+            HStack(spacing: Spacing.xs) {
                 savedHealthAccessory(
                     for: savedModelHealthStatuses[apiHealthKey(for: profile)],
                     title: profile.name,
@@ -655,10 +854,10 @@ struct SettingsView: View {
     ) -> some View {
         ZStack(alignment: .topTrailing) {
             Button(action: action) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    HStack(alignment: .top, spacing: Spacing.xs) {
                         VStack(alignment: .leading, spacing: 3) {
-                            HStack(spacing: 6) {
+                            HStack(spacing: Spacing.xs) {
                                 Text(title)
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(primaryTextColor)
@@ -670,10 +869,7 @@ struct SettingsView: View {
                                         .foregroundStyle(.white)
                                         .padding(.horizontal, 7)
                                         .padding(.vertical, 3)
-                                        .background(
-                                            Capsule()
-                                                .fill(accentColor)
-                                        )
+                                        .background(Capsule().fill(accentColor))
                                 }
                             }
 
@@ -693,30 +889,32 @@ struct SettingsView: View {
                             .lineLimit(2)
                     }
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, Spacing.sm - 2)
                 .padding(.vertical, 9)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                         .fill(isSelected ? accentColor.opacity(settings.isDarkMode ? 0.14 : 0.10) : fieldFill)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                         .stroke(isSelected ? accentColor.opacity(0.75) : outlineColor, lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)
 
             trailing()
-            .padding(.top, 8)
-            .padding(.trailing, 8)
+                .padding(.top, Spacing.xs)
+                .padding(.trailing, Spacing.xs)
         }
     }
+
+    // MARK: - API Fields
 
     private var standardAPIFields: some View {
         Group {
             labeledInput("API Key") {
-                HStack(spacing: 6) {
+                HStack(spacing: Spacing.xs) {
                     if showsAPIKey {
                         textInput(placeholder: "Enter API key", text: Binding(
                             get: { settings.aiApiKey },
@@ -735,12 +933,7 @@ struct SettingsView: View {
                         Image(systemName: showsAPIKey ? "eye.slash" : "eye")
                             .font(.system(size: 12, weight: .semibold))
                     }
-                    .buttonStyle(SettingsPillButtonStyle(
-                        isDarkMode: settings.isDarkMode,
-                        tone: .neutral,
-                        isSelected: false,
-                        compact: true
-                    ))
+                    .buttonStyle(SettingsPillButtonStyle(isDarkMode: settings.isDarkMode, tone: .neutral, isSelected: false, compact: true))
                 }
             }
 
@@ -777,7 +970,7 @@ struct SettingsView: View {
 
     private var advancedJSONSection: some View {
         Group {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
                 Text("Advanced JSON")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(primaryTextColor)
@@ -787,25 +980,15 @@ struct SettingsView: View {
                     .foregroundStyle(secondaryTextColor)
             }
 
-            HStack(spacing: 6) {
+            HStack(spacing: Spacing.xs) {
                 Button("Use Example") {
                     settings.aiAPIAdvancedJSONConfiguration = SettingsManager.defaultAdvancedAPIJSONConfiguration
                     resetAIDiagnostics()
                 }
-                .buttonStyle(SettingsPillButtonStyle(
-                    isDarkMode: settings.isDarkMode,
-                    tone: .accent,
-                    isSelected: false
-                ))
+                .buttonStyle(SettingsPillButtonStyle(isDarkMode: settings.isDarkMode, tone: .accent, isSelected: false))
 
-                Button("Format JSON") {
-                    formatAdvancedJSONConfiguration()
-                }
-                .buttonStyle(SettingsPillButtonStyle(
-                    isDarkMode: settings.isDarkMode,
-                    tone: .neutral,
-                    isSelected: false
-                ))
+                Button("Format JSON") { formatAdvancedJSONConfiguration() }
+                    .buttonStyle(SettingsPillButtonStyle(isDarkMode: settings.isDarkMode, tone: .neutral, isSelected: false))
             }
 
             TextEditor(text: Binding(
@@ -816,14 +999,14 @@ struct SettingsView: View {
             .foregroundStyle(primaryTextColor)
             .scrollContentBackground(.hidden)
             .frame(minHeight: 220, maxHeight: 220)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Spacing.xs)
             .padding(.vertical, 7)
             .background(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.lg - 3, style: .continuous)
                     .fill(fieldFill)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.lg - 3, style: .continuous)
                     .stroke(outlineColor, lineWidth: 1)
             )
 
@@ -839,74 +1022,10 @@ struct SettingsView: View {
         }
     }
 
-    private var deletedNotesSettings: some View {
-        VStack(spacing: 8) {
-            settingsCard {
-                sectionHeader(
-                    "Deleted Notes",
-                    subtitle: "Recovered notes return to your library. Unrecovered notes are permanently removed after 30 days."
-                )
-
-                if store.deletedNotes.isEmpty {
-                    VStack(spacing: 8) {
-                        Image(systemName: "trash.slash")
-                            .font(.system(size: 30))
-                            .foregroundStyle(secondaryTextColor)
-
-                        Text("No deleted notes")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(primaryTextColor)
-
-                        Text("Anything you delete will show up here until its recovery window expires.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(secondaryTextColor)
-                            .multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                } else {
-                    LazyVStack(spacing: 6) {
-                        ForEach(store.deletedNotes) { note in
-                            HStack(spacing: 10) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(note.title)
-                                        .font(.system(size: 13, weight: .semibold))
-                                        .foregroundStyle(primaryTextColor)
-
-                                    Text("Deleted \(note.deletedAt, style: .relative) ago")
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(secondaryTextColor)
-                                }
-
-                                Spacer()
-
-                                Button("Recover") {
-                                    store.recoverNote(note)
-                                }
-                                .buttonStyle(SettingsPillButtonStyle(
-                                    isDarkMode: settings.isDarkMode,
-                                    tone: .accent,
-                                    isSelected: false
-                                ))
-                            }
-                            .padding(10)
-                            .background(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(fieldFill)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(outlineColor, lineWidth: 1)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // MARK: - Colors
 
     private var panelBackground: some View {
-        RoundedRectangle(cornerRadius: 20, style: .continuous)
+        RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
             .fill(
                 LinearGradient(
                     colors: settings.isDarkMode
@@ -923,7 +1042,7 @@ struct SettingsView: View {
                 )
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
                     .stroke(borderColor, lineWidth: 1)
             )
             .shadow(color: shadowColor, radius: 24, x: 0, y: 10)
@@ -957,30 +1076,36 @@ struct SettingsView: View {
         settings.isDarkMode ? .black.opacity(0.35) : .black.opacity(0.12)
     }
 
-    private var accentColor: Color {
-        settings.isDarkMode
-        ? Color(red: 0.89, green: 0.49, blue: 0.18)
-        : Color(red: 0.90, green: 0.50, blue: 0.16)
+    private var dividerColor: Color {
+        settings.isDarkMode ? .white.opacity(0.07) : .black.opacity(0.06)
     }
 
+    private var accentColor: Color {
+        settings.isDarkMode
+            ? Color(red: 0.89, green: 0.49, blue: 0.18)
+            : Color(red: 0.90, green: 0.50, blue: 0.16)
+    }
+
+    // MARK: - Reusable Components
+
     private func settingsCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             content()
         }
-        .padding(11)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .fill(cardFill)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .stroke(outlineColor, lineWidth: 1)
         )
     }
 
     private func sectionHeader(_ title: String, subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(primaryTextColor)
@@ -991,6 +1116,27 @@ struct SettingsView: View {
         }
     }
 
+    private func toggleRow(title: String, subtitle: String, isOn: Binding<Bool>) -> some View {
+        HStack(alignment: .center, spacing: Spacing.md) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(primaryTextColor)
+
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(secondaryTextColor)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: isOn)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .scaleEffect(0.85)
+        }
+    }
+
     private func fieldLabel(_ title: String) -> some View {
         Text(title)
             .font(.system(size: 11, weight: .semibold))
@@ -998,7 +1144,7 @@ struct SettingsView: View {
     }
 
     private func labeledInput<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
             fieldLabel(title)
             content()
         }
@@ -1009,14 +1155,14 @@ struct SettingsView: View {
             .textFieldStyle(.plain)
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(primaryTextColor)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, Spacing.sm - 2)
             .padding(.vertical, 7)
             .background(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.lg - 3, style: .continuous)
                     .fill(fieldFill)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.lg - 3, style: .continuous)
                     .stroke(outlineColor, lineWidth: 1)
             )
     }
@@ -1026,14 +1172,14 @@ struct SettingsView: View {
             .textFieldStyle(.plain)
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(primaryTextColor)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, Spacing.sm - 2)
             .padding(.vertical, 7)
             .background(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.lg - 3, style: .continuous)
                     .fill(fieldFill)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.lg - 3, style: .continuous)
                     .stroke(outlineColor, lineWidth: 1)
             )
     }
@@ -1047,17 +1193,16 @@ struct SettingsView: View {
         isActionInProgress: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Spacing.xs) {
             TextField(placeholder, text: text)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(primaryTextColor)
 
             Button(action: action) {
-                HStack(spacing: 4) {
+                HStack(spacing: Spacing.xxs) {
                     if isActionInProgress {
-                        ProgressView()
-                            .controlSize(.small)
+                        ProgressView().controlSize(.small)
                     } else if let actionSystemImage {
                         Image(systemName: actionSystemImage)
                             .font(.system(size: 10.5, weight: .semibold))
@@ -1073,65 +1218,41 @@ struct SettingsView: View {
             ))
             .disabled(isActionInProgress)
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, Spacing.sm - 2)
         .padding(.vertical, 7)
         .background(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.lg - 3, style: .continuous)
                 .fill(fieldFill)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.lg - 3, style: .continuous)
                 .stroke(outlineColor, lineWidth: 1)
         )
     }
 
     private func fieldMenuLabel(_ title: String) -> some View {
-        HStack(spacing: 6) {
-            Text(title)
-                .lineLimit(1)
-            Spacer(minLength: 4)
+        HStack(spacing: Spacing.xs) {
+            Text(title).lineLimit(1)
+            Spacer(minLength: Spacing.xxs)
             Image(systemName: "chevron.down")
                 .font(.system(size: 10, weight: .semibold))
         }
         .font(.system(size: 11.5, weight: .semibold))
         .foregroundStyle(primaryTextColor.opacity(0.96))
-        .padding(.horizontal, 10)
+        .padding(.horizontal, Spacing.sm - 2)
         .padding(.vertical, 7)
         .background(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.lg - 3, style: .continuous)
                 .fill(settings.isDarkMode ? .white.opacity(0.08) : .white.opacity(0.94))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.lg - 3, style: .continuous)
                 .stroke(outlineColor.opacity(1.15), lineWidth: 1)
         )
     }
 
-    private func capsuleMenuLabel(_ title: String) -> some View {
-        HStack(spacing: 6) {
-            Text(title)
-                .lineLimit(1)
-            Image(systemName: "chevron.down")
-                .font(.system(size: 10, weight: .semibold))
-        }
-        .font(.system(size: 11, weight: .medium))
-        .foregroundStyle(primaryTextColor)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
-            Capsule()
-                .fill(fieldFill)
-        )
-        .overlay(
-            Capsule()
-                .stroke(outlineColor, lineWidth: 1)
-        )
-        .contentShape(Capsule())
-    }
-
     private func modifierPill(label: String, flag: Int) -> some View {
         let isSelected = (settings.hotkeyModifiers & flag) != 0
-
         return Button(label) {
             if isSelected {
                 settings.hotkeyModifiers &= ~flag
@@ -1139,11 +1260,7 @@ struct SettingsView: View {
                 settings.hotkeyModifiers |= flag
             }
         }
-        .buttonStyle(SettingsPillButtonStyle(
-            isDarkMode: settings.isDarkMode,
-            tone: .accent,
-            isSelected: isSelected
-        ))
+        .buttonStyle(SettingsPillButtonStyle(isDarkMode: settings.isDarkMode, tone: .accent, isSelected: isSelected))
     }
 
     private func compactIconButton(
@@ -1157,11 +1274,11 @@ struct SettingsView: View {
                 .foregroundStyle(tint)
                 .frame(width: 18, height: 18)
                 .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
                         .fill(fieldFill.opacity(settings.isDarkMode ? 1 : 0.92))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
                         .stroke(outlineColor, lineWidth: 1)
                 )
         }
@@ -1170,42 +1287,31 @@ struct SettingsView: View {
 
     private func choiceGroup<Value: Hashable>(
         title: String,
-        subtitle: String,
+        subtitle: String?,
         selection: Binding<Value>,
         options: [(String, Value)]
     ) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: Spacing.xs - 1) {
             Text(title)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(primaryTextColor)
 
-            Text(subtitle)
-                .font(.system(size: 11))
-                .foregroundStyle(secondaryTextColor)
+            if let subtitle {
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(secondaryTextColor)
+            }
 
             choiceStrip(selection: selection, options: options)
         }
-    }
-
-    private func booleanChoiceGroup(
-        title: String,
-        subtitle: String,
-        isOn: Binding<Bool>
-    ) -> some View {
-        choiceGroup(
-            title: title,
-            subtitle: subtitle,
-            selection: isOn,
-            options: [("Off", false), ("On", true)]
-        )
     }
 
     private func choiceStrip<Value: Hashable>(
         selection: Binding<Value>,
         options: [(String, Value)]
     ) -> some View {
-        HStack(spacing: 6) {
-            ForEach(options.indices, id: \.self) { index in
+        HStack(spacing: Spacing.xs) {
+            ForEach(0..<options.count, id: \.self) { index in
                 let option = options[index]
                 Button(option.0) {
                     selection.wrappedValue = option.1
@@ -1224,7 +1330,7 @@ struct SettingsView: View {
         options: [(String, Value)]
     ) -> some View {
         HStack(spacing: 0) {
-            ForEach(options.indices, id: \.self) { index in
+            ForEach(0..<options.count, id: \.self) { index in
                 let option = options[index]
                 let isSelected = selection.wrappedValue == option.1
                 Button(option.0) {
@@ -1233,38 +1339,28 @@ struct SettingsView: View {
                 .buttonStyle(.plain)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(isSelected ? Color.white : primaryTextColor.opacity(0.88))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 5)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xxs + 1)
                 .frame(minHeight: 32)
                 .contentShape(Rectangle())
                 .background(
-                    segmentBackground(
-                        isSelected: isSelected,
-                        index: index,
-                        count: options.count
-                    )
+                    segmentBackground(isSelected: isSelected, index: index, count: options.count)
                 )
             }
         }
         .padding(2)
-        .background(
-            Capsule()
-                .fill(fieldFill)
-        )
-        .overlay(
-            Capsule()
-                .stroke(outlineColor, lineWidth: 1)
-        )
+        .background(Capsule().fill(fieldFill))
+        .overlay(Capsule().stroke(outlineColor, lineWidth: 1))
     }
 
     @ViewBuilder
     private func segmentBackground(isSelected: Bool, index: Int, count: Int) -> some View {
         if isSelected {
             UnevenRoundedRectangle(
-                topLeadingRadius: index == 0 ? 999 : 6,
-                bottomLeadingRadius: index == 0 ? 999 : 6,
-                bottomTrailingRadius: index == count - 1 ? 999 : 6,
-                topTrailingRadius: index == count - 1 ? 999 : 6,
+                topLeadingRadius: index == 0 ? 999 : Radius.sm,
+                bottomLeadingRadius: index == 0 ? 999 : Radius.sm,
+                bottomTrailingRadius: index == count - 1 ? 999 : Radius.sm,
+                topTrailingRadius: index == count - 1 ? 999 : Radius.sm,
                 style: .continuous
             )
             .fill(accentColor)
@@ -1272,6 +1368,8 @@ struct SettingsView: View {
             Color.clear
         }
     }
+
+    // MARK: - Health Indicators
 
     private func savedProfileDetailLine(for profile: AIAPIProfile) -> String {
         let modelText = savedProfileModelName(for: profile)
@@ -1318,19 +1416,14 @@ struct SettingsView: View {
         case .idle:
             EmptyView()
         case .testing:
-            ProgressView()
-                .controlSize(.small)
-                .frame(width: 16, height: 16)
+            ProgressView().controlSize(.small).frame(width: 16, height: 16)
         case .success:
             healthStatusIcon(for: resolvedStatus)
         case .failure:
             Button {
                 diagnoseStatus = "Failed"
                 diagnoseResult = resolvedStatus.message ?? "The saved model health check failed."
-                presentDiagnosticsPopup(
-                    title: title,
-                    subtitle: subtitle
-                )
+                presentDiagnosticsPopup(title: title, subtitle: subtitle)
             } label: {
                 healthStatusIcon(for: resolvedStatus)
             }
@@ -1342,42 +1435,26 @@ struct SettingsView: View {
     private func savedHealthStatusText(for status: SavedModelHealthStatus?) -> String? {
         guard let status else { return nil }
         switch status.state {
-        case .idle:
-            return nil
-        case .testing:
-            return "Testing..."
-        case .success:
-            return nil
-        case .failure:
-            return nil
+        case .idle, .success, .failure: return nil
+        case .testing: return "Testing..."
         }
     }
 
     private func savedHealthStatusColor(for status: SavedModelHealthStatus?) -> Color {
         guard let status else { return secondaryTextColor }
         switch status.state {
-        case .idle, .testing:
-            return secondaryTextColor
-        case .success:
-            return Color.green.opacity(settings.isDarkMode ? 0.9 : 0.78)
-        case .failure:
-            return Color.red.opacity(settings.isDarkMode ? 0.9 : 0.78)
+        case .idle, .testing: return secondaryTextColor
+        case .success: return Color.green.opacity(settings.isDarkMode ? 0.9 : 0.78)
+        case .failure: return Color.red.opacity(settings.isDarkMode ? 0.9 : 0.78)
         }
     }
 
-    private func apiHealthKey(for profile: AIAPIProfile) -> String {
-        "api:\(profile.id)"
-    }
-
-    private func localHealthKey(for modelName: String) -> String {
-        "local:\(modelName)"
-    }
+    private func apiHealthKey(for profile: AIAPIProfile) -> String { "api:\(profile.id)" }
+    private func localHealthKey(for modelName: String) -> String { "local:\(modelName)" }
 
     private func savedProfileModelName(for profile: AIAPIProfile) -> String {
         let trimmedModel = profile.model.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedModel.isEmpty {
-            return trimmedModel
-        }
+        if !trimmedModel.isEmpty { return trimmedModel }
         if profile.requestStyle == .json {
             return extractedModelName(fromAdvancedJSONConfiguration: profile.advancedJSONConfiguration) ?? "JSON template"
         }
@@ -1386,17 +1463,13 @@ struct SettingsView: View {
 
     private func savedProfileEndpointLabel(for profile: AIAPIProfile) -> String {
         let trimmedEndpoint = profile.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let host = URL(string: trimmedEndpoint)?.host, !host.isEmpty {
-            return host
-        }
+        if let host = URL(string: trimmedEndpoint)?.host, !host.isEmpty { return host }
         return trimmedEndpoint.isEmpty ? "Endpoint not set" : trimmedEndpoint
     }
 
     private func savedProfileEndpointLabel(for endpoint: String) -> String {
         let trimmedEndpoint = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let host = URL(string: trimmedEndpoint)?.host, !host.isEmpty {
-            return host
-        }
+        if let host = URL(string: trimmedEndpoint)?.host, !host.isEmpty { return host }
         return trimmedEndpoint.isEmpty ? "Endpoint not set" : trimmedEndpoint
     }
 
@@ -1406,19 +1479,15 @@ struct SettingsView: View {
               let data = trimmed.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) as? [String: Any],
               let body = json["body"] as? [String: Any],
-              let model = body["model"] as? String else {
-            return nil
-        }
+              let model = body["model"] as? String else { return nil }
         let normalized = model.trimmingCharacters(in: .whitespacesAndNewlines)
         return normalized.isEmpty ? nil : normalized
     }
 
+    // MARK: - Actions
+
     private func closeSettings() {
-        if let onClose {
-            onClose()
-        } else {
-            dismiss()
-        }
+        if let onClose { onClose() } else { dismiss() }
     }
 
     private var aiDiagnosticsButtonTitle: String {
@@ -1427,10 +1496,9 @@ struct SettingsView: View {
 
     private var diagnosticsButton: some View {
         Button(action: runLocalDiagnosticsFromHeader) {
-            HStack(spacing: 4) {
+            HStack(spacing: Spacing.xxs) {
                 if isDiagnosing {
-                    ProgressView()
-                        .controlSize(.small)
+                    ProgressView().controlSize(.small)
                 } else {
                     Image(systemName: "stethoscope")
                         .font(.system(size: 11, weight: .semibold))
@@ -1438,12 +1506,7 @@ struct SettingsView: View {
                 Text(isDiagnosing ? "Testing" : "Test")
             }
         }
-        .buttonStyle(SettingsPillButtonStyle(
-            isDarkMode: settings.isDarkMode,
-            tone: .accent,
-            isSelected: false,
-            compact: true
-        ))
+        .buttonStyle(SettingsPillButtonStyle(isDarkMode: settings.isDarkMode, tone: .accent, isSelected: false, compact: true))
         .disabled(isDiagnosing)
     }
 
@@ -1455,9 +1518,7 @@ struct SettingsView: View {
         AIService.shared.diagnose(
             settings: settings,
             onStatus: { status in
-                DispatchQueue.main.async {
-                    diagnoseStatus = status
-                }
+                DispatchQueue.main.async { diagnoseStatus = status }
             },
             completion: { result in
                 DispatchQueue.main.async {
@@ -1487,10 +1548,7 @@ struct SettingsView: View {
     private func runLocalDiagnosticsFromHeader() {
         diagnoseStatus = ""
         diagnoseResult = ""
-        presentDiagnosticsPopup(
-            title: aiDiagnosticsButtonTitle,
-            subtitle: diagnosticsSubtitleText
-        )
+        presentDiagnosticsPopup(title: aiDiagnosticsButtonTitle, subtitle: diagnosticsSubtitleText)
         runActiveConfigurationTest(autoSaveAPIProfileOnSuccess: false)
     }
 
@@ -1543,9 +1601,7 @@ struct SettingsView: View {
 
     private var canSaveAPIProfile: Bool {
         let trimmedName = apiProfileNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedName.isEmpty {
-            return true
-        }
+        if !trimmedName.isEmpty { return true }
         switch settings.aiAPIRequestStyleEnum {
         case .standard:
             let endpoint = settings.aiAPIEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1597,9 +1653,7 @@ struct SettingsView: View {
     private func deleteSavedProfile(_ profile: AIAPIProfile) {
         guard let removed = settings.deleteAPIProfile(id: profile.id) else { return }
         savedModelHealthStatuses.removeValue(forKey: apiHealthKey(for: profile))
-        if settings.aiSelectedAPIProfile == nil {
-            syncAPIProfileDraft()
-        }
+        if settings.aiSelectedAPIProfile == nil { syncAPIProfileDraft() }
         apiProfileStatus = "Deleted \(removed.name)."
         resetAIDiagnostics()
     }
@@ -1665,7 +1719,6 @@ struct SettingsView: View {
             AIService.shared.diagnoseLocalModel(endpoint: settings.aiLocalEndpoint, model: modelName) { result in
                 var updatedReports = reports
                 let healthKey = localHealthKey(for: modelName)
-
                 switch result {
                 case .success(let info):
                     savedModelHealthStatuses[healthKey] = SavedModelHealthStatus(state: .success, message: "Healthy")
@@ -1675,13 +1728,7 @@ struct SettingsView: View {
                     savedModelHealthStatuses[healthKey] = SavedModelHealthStatus(state: .failure, message: message)
                     updatedReports.append("[Failed] \(modelName) | Local\n\(message)")
                 }
-
-                runSavedProfilesHealthTest(
-                    localModels: localModels,
-                    profiles: profiles,
-                    index: index + 1,
-                    reports: updatedReports
-                )
+                runSavedProfilesHealthTest(localModels: localModels, profiles: profiles, index: index + 1, reports: updatedReports)
             }
             return
         }
@@ -1694,7 +1741,6 @@ struct SettingsView: View {
             var updatedReports = reports
             let header = "\(profile.name) | \(profile.requestStyle.displayName) | \(self.savedProfileModelName(for: profile))"
             let healthKey = apiHealthKey(for: profile)
-
             switch result {
             case .success(let info):
                 savedModelHealthStatuses[healthKey] = SavedModelHealthStatus(state: .success, message: "Healthy")
@@ -1704,13 +1750,7 @@ struct SettingsView: View {
                 savedModelHealthStatuses[healthKey] = SavedModelHealthStatus(state: .failure, message: message)
                 updatedReports.append("[Failed] \(header)\n\(message)")
             }
-
-            runSavedProfilesHealthTest(
-                localModels: localModels,
-                profiles: profiles,
-                index: index + 1,
-                reports: updatedReports
-            )
+            runSavedProfilesHealthTest(localModels: localModels, profiles: profiles, index: index + 1, reports: updatedReports)
         }
     }
 
@@ -1746,6 +1786,77 @@ struct SettingsView: View {
         }
     }
 }
+
+// MARK: - Pill Button Style
+
+private struct SettingsPillButtonStyle: ButtonStyle {
+    enum Tone { case neutral, accent, destructive }
+
+    let isDarkMode: Bool
+    let tone: Tone
+    let isSelected: Bool
+    var compact: Bool = false
+    var minimumHeight: CGFloat? = nil
+
+    private var accentFill: Color {
+        isDarkMode ? Color(red: 0.89, green: 0.49, blue: 0.18) : Color(red: 0.90, green: 0.50, blue: 0.16)
+    }
+    private var neutralFill: Color {
+        isDarkMode ? .white.opacity(0.06) : .white.opacity(0.84)
+    }
+    private var destructiveFill: Color {
+        isDarkMode ? Color.red.opacity(0.18) : Color.red.opacity(0.10)
+    }
+    private var activeStroke: Color {
+        isDarkMode ? .white.opacity(0.10) : .black.opacity(0.08)
+    }
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: compact ? 10.5 : 11, weight: .semibold))
+            .foregroundStyle(foregroundColor(configuration: configuration))
+            .padding(.horizontal, compact ? 9 : 10)
+            .padding(.vertical, compact ? 5 : 6)
+            .frame(minHeight: compact ? 0 : (minimumHeight ?? 29))
+            .background(Capsule().fill(backgroundColor(configuration: configuration)))
+            .overlay(Capsule().stroke(strokeColor(configuration: configuration), lineWidth: 1))
+            .contentShape(Capsule())
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
+    }
+
+    private func backgroundColor(configuration: Configuration) -> Color {
+        let base: Color
+        switch tone {
+        case .neutral:     base = neutralFill
+        case .accent:      base = isSelected ? accentFill : neutralFill
+        case .destructive: base = destructiveFill
+        }
+        return configuration.isPressed ? base.opacity(0.85) : base
+    }
+
+    private func strokeColor(configuration: Configuration) -> Color {
+        let base: Color
+        switch tone {
+        case .neutral:     base = activeStroke
+        case .accent:      base = isSelected ? accentFill.opacity(0.92) : activeStroke
+        case .destructive: base = Color.red.opacity(isDarkMode ? 0.28 : 0.22)
+        }
+        return configuration.isPressed ? base.opacity(0.86) : base
+    }
+
+    private func foregroundColor(configuration: Configuration) -> Color {
+        let base: Color
+        switch tone {
+        case .accent where isSelected: base = .white
+        case .destructive:             base = isDarkMode ? .white.opacity(0.92) : .red.opacity(0.8)
+        default:                       base = isDarkMode ? .white.opacity(0.92) : .black.opacity(0.78)
+        }
+        return configuration.isPressed ? base.opacity(0.88) : base
+    }
+}
+
+// MARK: - Diagnostics Popup
 
 private struct AIDiagnosticsPopup: View {
     let title: String
@@ -1798,148 +1909,60 @@ private struct AIDiagnosticsPopup: View {
 
                 Spacer(minLength: 8)
 
-                Button("Close", action: onClose)
-                    .buttonStyle(SettingsPillButtonStyle(
-                        isDarkMode: isDarkMode,
-                        tone: .neutral,
-                        isSelected: false,
-                        compact: true
-                    ))
-            }
+                HStack(spacing: 6) {
+                    if isDiagnosing {
+                        ProgressView().controlSize(.small)
+                    }
 
-            HStack(spacing: 6) {
-                if isDiagnosing {
-                    ProgressView()
-                        .controlSize(.small)
+                    Button(action: onCopy) {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(SettingsPillButtonStyle(isDarkMode: isDarkMode, tone: .neutral, isSelected: false, compact: true))
+                    .help("Copy to clipboard")
+
+                    Button(action: onClose) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(SettingsPillButtonStyle(isDarkMode: isDarkMode, tone: .neutral, isSelected: false, compact: true))
                 }
-                Text(isDiagnosing ? "Testing active AI configuration..." : (status.isEmpty ? "Idle" : status))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(secondaryTextColor)
             }
 
             ScrollView {
                 Text(displayedText)
-                    .font(.system(size: 11.5, weight: .medium, design: .monospaced))
-                    .foregroundStyle(primaryTextColor)
-                    .textSelection(.enabled)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(primaryTextColor.opacity(0.9))
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
+                    .textSelection(.enabled)
             }
-            .frame(width: 460, height: 220)
+            .frame(maxHeight: 160)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(fieldFill)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(outlineColor, lineWidth: 1)
             )
-
-            HStack(spacing: 6) {
-                Button("Copy Result", action: onCopy)
-                    .buttonStyle(SettingsPillButtonStyle(
-                        isDarkMode: isDarkMode,
-                        tone: .accent,
-                        isSelected: false
-                    ))
-
-                Spacer()
-            }
         }
         .padding(14)
-        .frame(minWidth: 500, minHeight: 330)
+        .frame(maxWidth: 340)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(isDarkMode ? Color(white: 0.12) : Color(white: 0.98))
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(isDarkMode
+                    ? Color(red: 0.13, green: 0.13, blue: 0.15)
+                    : Color(red: 0.96, green: 0.96, blue: 0.97))
         )
-    }
-}
-
-private struct SettingsPillButtonStyle: ButtonStyle {
-    enum Tone {
-        case neutral
-        case accent
-        case destructive
-    }
-
-    let isDarkMode: Bool
-    let tone: Tone
-    let isSelected: Bool
-    var compact: Bool = false
-    var minimumHeight: CGFloat? = nil
-
-    private var accentFill: Color {
-        isDarkMode ? Color(red: 0.89, green: 0.49, blue: 0.18) : Color(red: 0.90, green: 0.50, blue: 0.16)
-    }
-
-    private var neutralFill: Color {
-        isDarkMode ? .white.opacity(0.06) : .white.opacity(0.84)
-    }
-
-    private var destructiveFill: Color {
-        isDarkMode ? Color.red.opacity(0.18) : Color.red.opacity(0.10)
-    }
-
-    private var activeStroke: Color {
-        isDarkMode ? .white.opacity(0.10) : .black.opacity(0.08)
-    }
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: compact ? 10.5 : 11, weight: .semibold))
-            .foregroundStyle(foregroundColor(configuration: configuration))
-            .padding(.horizontal, compact ? 9 : 10)
-            .padding(.vertical, compact ? 5 : 6)
-            .frame(minHeight: compact ? 0 : (minimumHeight ?? 29))
-            .background(
-                Capsule()
-                    .fill(backgroundColor(configuration: configuration))
-            )
-            .overlay(
-                Capsule()
-                    .stroke(strokeColor(configuration: configuration), lineWidth: 1)
-            )
-            .contentShape(Capsule())
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
-            .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
-    }
-
-    private func backgroundColor(configuration: Configuration) -> Color {
-        let base: Color
-        switch tone {
-        case .neutral:
-            base = neutralFill
-        case .accent:
-            base = isSelected ? accentFill : neutralFill
-        case .destructive:
-            base = destructiveFill
-        }
-        return configuration.isPressed ? base.opacity(0.85) : base
-    }
-
-    private func strokeColor(configuration: Configuration) -> Color {
-        let base: Color
-        switch tone {
-        case .neutral:
-            base = activeStroke
-        case .accent:
-            base = isSelected ? accentFill.opacity(0.92) : activeStroke
-        case .destructive:
-            base = Color.red.opacity(isDarkMode ? 0.28 : 0.22)
-        }
-        return configuration.isPressed ? base.opacity(0.86) : base
-    }
-
-    private func foregroundColor(configuration: Configuration) -> Color {
-        let base: Color
-        switch tone {
-        case .accent where isSelected:
-            base = .white
-        case .destructive:
-            base = isDarkMode ? .white.opacity(0.92) : .red.opacity(0.8)
-        default:
-            base = isDarkMode ? .white.opacity(0.92) : .black.opacity(0.78)
-        }
-        return configuration.isPressed ? base.opacity(0.88) : base
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(outlineColor, lineWidth: 1)
+        )
+        .shadow(
+            color: isDarkMode ? .black.opacity(0.4) : .black.opacity(0.14),
+            radius: 16, x: 0, y: 6
+        )
     }
 }
