@@ -1,5 +1,72 @@
 # HANDOVER (Tab Note)
 
+## Completed in this pass (2026-03-27, split-pane tabs regained right-click actions)
+- Reworked split-pane tab items in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/ContentView.swift`
+- Behavior changes:
+  - split-pane tabs now expose the same right-click context menu actions as normal tabs: pin, rename, open in new window, split actions, theme, export, and delete
+  - split-pane tabs now also support the rename popover path directly instead of acting like passive labels
+- Preferences / dislikes reinforced from user feedback:
+  - wants split mode to keep real tab affordances, not just visual tab styling
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had rebuilt the split-pane strips as pane-local tab systems but left them as lightweight buttons, which dropped the expected tab context menu behavior
+
+## Completed in this pass (2026-03-27, true pane-local tab systems for split mode)
+- Reworked split-mode architecture in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/ContentView.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/NoteModel.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/NoteEditorView.swift`
+- Behavior changes:
+  - split mode now hides the window-level tab bar and renders a separate tab strip inside each split pane
+  - each pane keeps its own selected tab, so split mode behaves more like two merged Tab Note workspaces than one main workspace plus a duplicated subheader
+  - splitting a tab now partitions the window tabs into pane-local groups, and pane tab clicks / pane editor focus keep window-level selection synced to the active pane
+  - each split pane now has its own `+` note button and the secondary pane has its own close-split control
+- Preferences / dislikes reinforced from user feedback:
+  - explicitly dislikes duplicate chrome where the main tab system remains visible above split-local tab UI
+  - wants split mode to feel like tabs themselves were split across panes, not like one editor was duplicated underneath the original tab bar
+- Mistakes / wrong assumptions fixed in this pass:
+  - my previous version still thought in terms of a single main tab system with pane headers, but the requested UX is a true pane-local tab model
+
+## Completed in this pass (2026-03-27, split panes now carry tab identity)
+- Reworked split-note state and pane headers in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/ContentView.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/NoteModel.swift`
+- Behavior changes:
+  - split mode now keeps an explicit primary pane note and secondary pane note instead of inferring one pane from the current global tab selection
+  - splitting a tab now pairs it with the visible tab to its left when possible, falling back to the right neighbor only if there is no left tab
+  - each split pane now shows a tab-like header, so the note feels like it actually moved into that pane instead of becoming a bare extra editor
+  - clicking tabs in the top tab bar while split mode is open now updates or swaps the primary pane instead of collapsing the split unexpectedly
+- Preferences / dislikes reinforced from user feedback:
+  - wants split horizontal/vertical to feel intuitive and spatial, with the tab clearly travelling with the note into the new pane
+  - likes the idea that a split should pair with the tab immediately to the left instead of whatever note happened to be selected before
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had treated split view as “one normal editor plus one auxiliary editor,” but that made the feature feel detached from the tab model and visually ambiguous
+
+## Completed in this pass (2026-03-27, primary editor no longer rebuilds on tab switch)
+- Reworked primary editor identity in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/ContentView.swift`
+- Behavior changes:
+  - removed the primary `NoteEditorView` `.id(selectedNoteID)` rebuild so tab switches reuse the existing AppKit editor and go through `updateNSView`'s tab-change reload path instead of constructing a fresh TextKit stack each time
+- Preferences / dislikes reinforced from user feedback:
+  - wants tab switching fixed at the actual crash point, not just surrounding cleanup
+- Mistakes / wrong assumptions fixed in this pass:
+  - I had kept the older “rebuild the editor on every tab change” approach even after adding explicit tab-change reload logic, which likely kept the app on the crashing makeNSView path
+
+## Completed in this pass (2026-03-27, tab-switch crash hardening)
+- Reworked tab-switch persistence and inline panel layout in:
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/ContentView.swift`
+  - `/Users/kientran/Desktop/KiensApps/Tab Note/Tab Note/NoteEditorView.swift`
+- Behavior changes:
+  - removed the duplicate `.tabWillChange` save from `ContentView`; the outgoing note now persists from the editor path instead of doing extra write work during tab selection
+  - the primary editor now captures a stable note id for `onRTFChange`, so late `NSTextView` callbacks from the old tab cannot write RTF into the newly selected note
+  - the inline AI panel no longer forces a synchronous `displayIfNeeded()` or extra window appearance sync from inside SwiftUI updates
+- Preferences / dislikes reinforced from user feedback:
+  - wants runtime crash fixes aimed at the real tab-switch failure, not compiler-clean changes that still freeze on first interaction
+  - dislikes handoffs that claim success from build output while the app still crashes in actual use
+- Mistakes / wrong assumptions fixed in this pass:
+  - I initially followed the earlier compiler/TextKit trail too closely, but the more plausible regression was re-entrant tab-switch state mixed with forced panel redraw during layout
+  - I also first treated save timing as the whole issue; the bigger bug was that the primary editor save callback resolved the current selected tab dynamically, so teardown callbacks could target the wrong note after a switch
+
 ## Completed in this pass (2026-03-08, documented streaming throughput lesson from Claude fix)
 - Updated backend implementation notes in:
   - `/Users/kientran/Desktop/KiensApps/Tab Note/AI_BACKEND_IMPLEMENTATION.md`
@@ -1020,12 +1087,26 @@
 
 ## Completed in this pass (2026-03-06, shared prompt-routing skill package)
 - Added shared reusable skill package at:
-  `/Users/kientran/Desktop/KiensApps/skills/prompt-injection-routing-kit`
+- `/Users/kientran/Desktop/KiensApps/skills/prompt-injection-routing-kit`
 - Captured the current Tab Note inline pattern as one host archetype inside the skill:
   - compact inline/header controls,
   - single-select mode/expert/voice caps,
   - developer/system-prompt routing profile.
 - Paired that with the Octopus multi-surface web-overlay archetype so future apps can reuse one shared 4-dimension system instead of re-deriving enums/prompts/UI rules from scratch.
+
+## Completed in this pass (2026-03-26, footnote pin-on-top + editor retention polish)
+- Added a footnote `Pin on Top` control so the floating-note windows can toggle between normal level and always-on-top directly from the footer instead of forcing a trip into Settings.
+- Made footer hover states fully rounded and removed visible editor scroll bars for a cleaner bottom-bar/editor presentation.
+- Tightened rich-text retention so attribute-only edits are persisted too, and stopped the appearance refresh path from repainting normal text foreground colors on tab/app reloads. This was the main reason styled text could look like it did not stick after switching tabs or reopening.
+
+## User preferences / dislikes (updated 2026-03-26)
+- Prefers quick footer controls for important window behaviors like floating/pin-on-top instead of burying them in Settings.
+- Dislikes visible scroll bars and wants hover backgrounds in the footnote to feel fully rounded/polished.
+- Wants `HANDOVER.md` kept brief, updated every pass, and to always capture mistakes/wrong assumptions after each fix.
+
+## Mistakes / wrong assumptions corrected in this pass
+- I first treated the rich-text issue as mainly a save-timing problem. The bigger regression was that the editor appearance pass was overwriting stored foreground styling whenever the view refreshed.
+- I also initially considered coalescing RTF persistence asynchronously, but that would risk saving to the wrong tab if the selection changed immediately after an edit. The final fix keeps active-note persistence synchronous.
 
 ## Completed in this pass (2026-03-06, AI popup font + hotkey + thinking duration)
 - Synced the inline AI popup body typography with the main editor font choice while keeping code blocks and inline code on a fixed monospaced treatment.

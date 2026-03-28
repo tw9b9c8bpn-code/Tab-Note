@@ -132,6 +132,26 @@ struct TabItemView: View {
             Divider()
             Button("Rename") { renameText = note.title; showRenamePopover = true }
             Button("Open in New Window") { openInNewWindow() }
+            Divider()
+            Button {
+                NotificationCenter.default.post(
+                    name: .splitViewRequested,
+                    object: nil,
+                    userInfo: ["noteId": note.id, "direction": "vertical", "windowID": windowID]
+                )
+            } label: {
+                Label("Split Vertically", systemImage: "rectangle.split.2x1")
+            }
+            Button {
+                NotificationCenter.default.post(
+                    name: .splitViewRequested,
+                    object: nil,
+                    userInfo: ["noteId": note.id, "direction": "horizontal", "windowID": windowID]
+                )
+            } label: {
+                Label("Split Horizontally", systemImage: "rectangle.split.1x2")
+            }
+            Divider()
             Menu("Theme") {
                 Button("Default Orange") { store.setNoteColor(id: note.id, colorHex: "defaultOrange") }
                 Divider()

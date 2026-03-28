@@ -83,6 +83,7 @@ final class DeletedNote {
     var id: String = UUID().uuidString
     var title: String = ""
     var content: String = ""
+    var rtfData: Data? = nil
     var colorHex: String = "C57355"
     var order: Int = 0
     var createdAt: Date = Date()
@@ -93,6 +94,7 @@ final class DeletedNote {
         self.id = note.id
         self.title = note.title
         self.content = note.content
+        self.rtfData = note.rtfData
         self.colorHex = note.colorHex
         self.order = note.order
         self.createdAt = note.createdAt
@@ -124,6 +126,7 @@ class NotesStore: ObservableObject {
     @Published var lastDeletedNote: DeletedNote?
 
     private var modelContext: ModelContext?
+    private var pendingSaveWork: DispatchWorkItem?
 
     var selectedNote: TabNote? {
         selectedNote(in: Self.mainWindowID)
@@ -139,6 +142,23 @@ class NotesStore: ObservableObject {
         let windowNotes = notes(in: windowID)
         return windowNotes.filter(\.isPinned).sorted { $0.order < $1.order }
             + windowNotes.filter { !$0.isPinned }.sorted { $0.order < $1.order }
+    }
+
+    func visualOrderedNoteIds(in windowID: String) -> [String] {
+        visualOrderedNotes(in: windowID).map(\.id)
+    }
+
+    func adjacentVisibleNoteId(for id: String, in windowID: String, preferPrevious: Bool = true) -> String? {
+        let ordered = visualOrderedNotes(in: windowID)
+        guard let index = ordered.firstIndex(where: { $0.id == id }) else { return nil }
+
+        let previousID = index > 0 ? ordered[index - 1].id : nil
+        let nextID = index + 1 < ordered.count ? ordered[index + 1].id : nil
+
+        if preferPrevious {
+            return previousID ?? nextID
+        }
+        return nextID ?? previousID
     }
 
     func selectedNoteId(in windowID: String) -> String? {
@@ -160,10 +180,18 @@ class NotesStore: ObservableObject {
     func setSelectedNoteId(_ id: String?, in windowID: String) {
         if windowID == Self.mainWindowID {
             if selectedNoteId == id { return }
+            // Notify that tab is about to change so RTF can be saved
+            if selectedNoteId != nil, let outgoingId = selectedNoteId {
+                NotificationCenter.default.post(name: .tabWillChange, object: outgoingId)
+            }
             selectedNoteId = id
             return
         }
-        if selectedNoteIdsByWindow[windowID] == id { return }
+        let oldId = selectedNoteIdsByWindow[windowID]
+        if oldId == id { return }
+        if oldId != nil, let outgoingId = oldId {
+            NotificationCenter.default.post(name: .tabWillChange, object: outgoingId)
+        }
         selectedNoteIdsByWindow[windowID] = id
         objectWillChange.send()
     }
@@ -189,7 +217,7 @@ class NotesStore: ObservableObject {
             note.windowID = Self.mainWindowID
             didRepairWindowID = true
         }
-        if didRepairWindowID { save() }
+        if didRepairWindowID { saveImmediately() }
 
         if notes.isEmpty { createNote(in: Self.mainWindowID, title: "New Note") }
 
@@ -207,15 +235,17 @@ class NotesStore: ObservableObject {
 
     // MARK: - CRUD
 
-    func createNote(in windowID: String = NotesStore.mainWindowID, title: String? = nil) {
-        guard let ctx = modelContext else { return }
+    @discardableResult
+    func createNote(in windowID: String = NotesStore.mainWindowID, title: String? = nil) -> String? {
+        guard let ctx = modelContext else { return nil }
         let order = (notes(in: windowID).map(\.order).max() ?? -1) + 1
         let autoTitle = title ?? "\(notes(in: windowID).count + 1)"
         let note = TabNote(windowID: windowID, title: autoTitle, order: order)
         ctx.insert(note)
-        save()
+        saveImmediately()
         notes.append(note)
         setSelectedNoteId(note.id, in: windowID)
+        return note.id
     }
 
     func updateNoteContent(id: String, content: String) {
@@ -236,7 +266,7 @@ class NotesStore: ObservableObject {
         guard let note = notes.first(where: { $0.id == id }) else { return }
         note.title = title
         note.modifiedAt = Date()
-        save()
+        saveImmediately()
         // Refresh to trigger UI update
         if let idx = notes.firstIndex(where: { $0.id == id }) {
             objectWillChange.send()
@@ -262,7 +292,7 @@ class NotesStore: ObservableObject {
         let deleted = DeletedNote(from: note)
         ctx.insert(deleted)
         ctx.delete(note)
-        save()
+        saveImmediately()
 
         deletedNotes.insert(deleted, at: 0)
         lastDeletedNote = deleted
@@ -307,7 +337,7 @@ class NotesStore: ObservableObject {
         guard let note = notes.first(where: { $0.id == id }) else { return }
         note.isPinned.toggle()
         note.modifiedAt = Date()
-        save()
+        saveImmediately()
         objectWillChange.send()
     }
 
@@ -316,7 +346,7 @@ class NotesStore: ObservableObject {
         for (i, id) in orderedIds.enumerated() {
             if let note = notes.first(where: { $0.id == id }) { note.order = i }
         }
-        save()
+        saveImmediately()
         notes = notes.sorted { $0.order < $1.order }
         objectWillChange.send()
     }
@@ -336,7 +366,7 @@ class NotesStore: ObservableObject {
         let lhsOrder = lhs.order
         lhs.order = rhs.order
         rhs.order = lhsOrder
-        save()
+        saveImmediately()
         notes = notes.sorted { $0.order < $1.order }
         objectWillChange.send()
     }
@@ -374,9 +404,10 @@ class NotesStore: ObservableObject {
             colorHex: deletedNote.colorHex,
             order: order
         )
+        restored.rtfData = deletedNote.rtfData
         ctx.insert(restored)
         ctx.delete(deletedNote)
-        save()
+        saveImmediately()
 
         notes.append(restored)
         setSelectedNoteId(restored.id, in: Self.mainWindowID)
@@ -396,7 +427,7 @@ class NotesStore: ObservableObject {
         note.windowID = targetWindowID
         note.order = targetOrder
         note.modifiedAt = Date()
-        save()
+        saveImmediately()
 
         if selectedNoteId(in: sourceWindowID) == id {
             let sourceNotes = notes(in: sourceWindowID).filter { $0.id != id }
@@ -477,7 +508,20 @@ class NotesStore: ObservableObject {
 
     // MARK: - Save
 
+    /// Debounced save — coalesces rapid changes (typing, RTF updates) into one disk write.
     private func save() {
+        pendingSaveWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            try? self?.modelContext?.save()
+        }
+        pendingSaveWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+    }
+
+    /// Immediate save — for structural changes (create, delete, move, pin) where data loss is unacceptable.
+    private func saveImmediately() {
+        pendingSaveWork?.cancel()
+        pendingSaveWork = nil
         try? modelContext?.save()
     }
 
@@ -487,7 +531,7 @@ class NotesStore: ObservableObject {
         let expired = deletedNotes.filter { $0.deletedAt < cutoff }
         for note in expired { ctx.delete(note) }
         deletedNotes.removeAll(where: { $0.deletedAt < cutoff })
-        if !expired.isEmpty { save() }
+        if !expired.isEmpty { saveImmediately() }
     }
 }
 

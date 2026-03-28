@@ -40,6 +40,15 @@ struct FootnoteBarView: View {
 
                 FootnoteButton(
                     isDarkMode: settings.isDarkMode,
+                    helpText: settings.alwaysOnTop ? "Disable Pin on Top" : "Pin on Top",
+                    action: { settings.alwaysOnTop.toggle() }
+                ) {
+                    Image(systemName: settings.alwaysOnTop ? "pin.fill" : "pin.slash")
+                        .font(.system(size: 9))
+                }
+
+                FootnoteButton(
+                    isDarkMode: settings.isDarkMode,
                     helpText: "Quick guide",
                     action: { showInfoPopover.toggle() }
                 ) {
@@ -114,14 +123,14 @@ private struct FootnoteButton<Label: View>: View {
                 )
                 .frame(width: 22, height: 22)
                 .background(
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    Capsule(style: .continuous)
                         .fill(
                             isHovering
                                 ? (isDarkMode ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
                                 : Color.clear
                         )
                 )
-                .contentShape(Rectangle())
+                .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
@@ -184,6 +193,7 @@ struct AIPopupView: View {
                     .textSelection(.enabled)
                     .padding(10)
             }
+            .scrollIndicators(.never)
             .frame(maxHeight: 220)
         }
         .if(showBackground) { v in

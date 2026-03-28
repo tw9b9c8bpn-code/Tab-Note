@@ -48,6 +48,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         setupLocalEventMonitor()
         setupStatusBar()
         setupPanel()
+        bindSettings()
 
         // Auto-update check on launch
         if settingsManager.autoCheckUpdates {
@@ -252,6 +253,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         if flags.contains(.control) || flags.contains(.option) { return false }
         if event.keyCode == 4 { return true } // Physical "H" key on ANSI layout.
         return event.charactersIgnoringModifiers?.lowercased() == "h"
+    }
+
+    private func bindSettings() {
+        settingsSub = settingsManager.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.applyNotePanelLevel()
+            }
+        }
+    }
+
+    private var notePanelLevel: NSWindow.Level {
+        settingsManager.alwaysOnTop ? .floating : .normal
+    }
+
+    private func applyNotePanelLevel() {
+        let level = notePanelLevel
+        for panel in panelsByWindowID.values {
+            panel.level = level
+        }
     }
 
     // MARK: - Panel
@@ -465,7 +485,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         newPanel.titleVisibility = .hidden
         newPanel.titlebarAppearsTransparent = true
         newPanel.isMovableByWindowBackground = makeMovableByBackground
-        newPanel.level = .floating
+        newPanel.level = notePanelLevel
         newPanel.hidesOnDeactivate = false
         newPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         newPanel.isOpaque = false

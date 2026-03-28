@@ -34,4 +34,6 @@ extension Notification.Name {
     static let applyTextStyle = Notification.Name("applyTextStyle")
     static let answerQuestionAtCursor = Notification.Name("answerQuestionAtCursor")
     static let inlineAIStatusDidChange = Notification.Name("inlineAIStatusDidChange")
+    static let tabWillChange = Notification.Name("tabWillChange")
+    static let splitViewRequested = Notification.Name("splitViewRequested")
 }

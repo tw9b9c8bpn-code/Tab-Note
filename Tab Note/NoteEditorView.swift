@@ -70,17 +70,30 @@ struct NoteEditorView: NSViewRepresentable {
     @ObservedObject var settings: SettingsManager
     var onThemeSelected: ((String) -> Void)?
     var onRTFChange: ((Data?) -> Void)?
+    var onBecameActive: (() -> Void)? = nil
     var initialRTF: Data?
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
-        let textView = HighlightCapturingTextView()
+
+        // TextKit 2 (default on macOS 12+) adds rendering-surface subviews during a layout
+        // pass, re-triggering constraint updates and causing an infinite constraint loop.
+        // Force TextKit 1 by initialising with an explicit NSLayoutManager text container.
+        let textStorage = NSTextStorage()
+        let layoutManager = NSLayoutManager()
+        textStorage.addLayoutManager(layoutManager)
+        let textContainer = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+        textContainer.widthTracksTextView = true
+        layoutManager.addTextContainer(textContainer)
+        let textView: HighlightCapturingTextView = HighlightCapturingTextView(frame: NSRect.zero, textContainer: textContainer)
+
         textView.onThemeSelected = self.onThemeSelected
         textView.onRichTextChange = { [weak coordinator = context.coordinator] rtf in
             coordinator?.persistRTF(rtf)
         }
+        textView.onBecameActive = self.onBecameActive
 
         textView.delegate = context.coordinator
         textView.isRichText = true
@@ -104,31 +117,32 @@ struct NoteEditorView: NSViewRepresentable {
         textView.isAutomaticTextReplacementEnabled = false
         textView.isAutomaticLinkDetectionEnabled = false
 
-        textView.backgroundColor = .clear
+        textView.backgroundColor = NSColor.clear
         textView.drawsBackground = false
         textView.textColor = NSColor.labelColor
         textView.insertionPointColor = NSColor.labelColor
         textView.linkTextAttributes = [
-            .underlineStyle: 0,
-            .foregroundColor: NSColor.secondaryLabelColor
+            NSAttributedString.Key.underlineStyle: 0,
+            NSAttributedString.Key.foregroundColor: NSColor.secondaryLabelColor
         ]
 
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
-        textView.textContainer?.widthTracksTextView = true
-        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        textView.autoresizingMask = NSView.AutoresizingMask.width
         textView.textContainerInset = NSSize(width: 12, height: 12)
 
-        scrollView.hasVerticalScroller = true
+        scrollView.hasVerticalScroller = false
         scrollView.hasHorizontalScroller = false
         scrollView.drawsBackground = false
         scrollView.documentView = textView
         scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
 
         context.coordinator.textView = textView
+        textView.textStorage?.delegate = context.coordinator
         context.coordinator.installStyleObserver(for: textView)
         context.coordinator.installInlineQuestionObserver(for: textView)
+        context.coordinator.installTabChangeObserver(for: textView)
         return scrollView
     }
 
@@ -139,6 +153,8 @@ struct NoteEditorView: NSViewRepresentable {
         textView.onRichTextChange = { [weak coordinator = context.coordinator] rtf in
             coordinator?.persistRTF(rtf)
         }
+        textView.onBecameActive = self.onBecameActive
+        textView.textStorage?.delegate = context.coordinator
 
         // Force reload RTF if content string OR noteId tab has changed
         let contentChanged = (textView.string != text)
@@ -191,13 +207,14 @@ struct NoteEditorView: NSViewRepresentable {
 
     // MARK: - Coordinator
 
-    class Coordinator: NSObject, NSTextViewDelegate {
+    class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
         var parent: NoteEditorView
         weak var textView: HighlightCapturingTextView?
         var lastNoteId: String?
         var isProgrammaticUpdate = false
         var styleObserver: NSObjectProtocol?
         var inlineQuestionObserver: NSObjectProtocol?
+        var tabChangeObserver: NSObjectProtocol?
         private var lastSearchQuery = ""
         private var lastSearchRequestID = 0
         private var pendingTripleQuestionTrigger = false
@@ -205,7 +222,10 @@ struct NoteEditorView: NSViewRepresentable {
         private var lastAppliedFontChoice: FontChoice?
         private var lastAppliedDarkMode: Bool?
 
-        init(_ parent: NoteEditorView) { self.parent = parent }
+        init(_ parent: NoteEditorView) {
+            self.parent = parent
+            super.init()
+        }
 
         deinit {
             if let styleObserver {
@@ -213,6 +233,25 @@ struct NoteEditorView: NSViewRepresentable {
             }
             if let inlineQuestionObserver {
                 NotificationCenter.default.removeObserver(inlineQuestionObserver)
+            }
+            if let tabChangeObserver {
+                NotificationCenter.default.removeObserver(tabChangeObserver)
+            }
+        }
+
+        func installTabChangeObserver(for textView: HighlightCapturingTextView) {
+            if let tabChangeObserver {
+                NotificationCenter.default.removeObserver(tabChangeObserver)
+            }
+            tabChangeObserver = NotificationCenter.default.addObserver(
+                forName: .tabWillChange,
+                object: nil,
+                queue: .main
+            ) { [weak self, weak textView] note in
+                guard let self, let textView,
+                      let outgoingId = self.lastNoteId,
+                      outgoingId == (note.object as? String) else { return }
+                self.persistRTF(from: textView)
             }
         }
 
@@ -316,6 +355,21 @@ struct NoteEditorView: NSViewRepresentable {
                 }
             }
             return true
+        }
+
+        func textStorage(
+            _ textStorage: NSTextStorage,
+            didProcessEditing editedMask: NSTextStorageEditActions,
+            range editedRange: NSRange,
+            changeInLength delta: Int
+        ) {
+            guard !isProgrammaticUpdate,
+                  editedMask.contains(.editedAttributes),
+                  !editedMask.contains(.editedCharacters),
+                  let textView else {
+                return
+            }
+            persistRTF(from: textView)
         }
 
         func persistRTF(_ rtf: Data?) {
@@ -477,24 +531,18 @@ struct NoteEditorView: NSViewRepresentable {
             let fullRange = NSRange(location: 0, length: storage.length)
             guard fullRange.length > 0 else { return }
 
-            var plainTextRanges: [NSRange] = []
             var markerRanges: [NSRange] = []
             storage.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
                 if attributes[.attachment] != nil { return }
                 if let link = attributes[.link],
                    HighlightCapturingTextView.inlineAnswerMarkerLinkString(from: link) != nil {
                     markerRanges.append(range)
-                    return
                 }
-                plainTextRanges.append(range)
             }
 
             storage.beginEditing()
             for range in markerRanges {
                 storage.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: range)
-            }
-            for range in plainTextRanges {
-                storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: range)
             }
             storage.endEditing()
         }
@@ -539,6 +587,7 @@ class HighlightCapturingTextView: NSTextView {
 
     var onThemeSelected: ((String) -> Void)?
     var onRichTextChange: ((Data?) -> Void)?
+    var onBecameActive: (() -> Void)?
     private static let inlineAnswerPanels = InlineAnswerPanelManager.shared
     private static let inlineAnswerMarkerPrefix = "tabnote-ai:"
 
@@ -604,6 +653,14 @@ class HighlightCapturingTextView: NSTextView {
         menu.addItem(ThemeMenuHelper.createThemeMenuItem(target: self, action: #selector(themeBtnClicked(_:))))
 
         return menu
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let becameFirstResponder = super.becomeFirstResponder()
+        if becameFirstResponder {
+            onBecameActive?()
+        }
+        return becameFirstResponder
     }
 
     @objc private func themeBtnClicked(_ sender: NSButton) {
@@ -2037,7 +2094,6 @@ final class InlineAnswerPanelController: NSObject, NSWindowDelegate {
         let appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
         panel?.appearance = appearance
         panel?.contentViewController?.view.appearance = appearance
-        panel?.displayIfNeeded()
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -3354,7 +3410,6 @@ private struct InlineCursorAnswerPopoverView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(panelBorder, lineWidth: 1)
         )
-        .background(PanelAppearanceSyncView(isDarkMode: settings.isDarkMode))
         .frame(
             minWidth: 366,
             idealWidth: model.contentSize.width,
@@ -3384,21 +3439,26 @@ private struct SelectableAttributedTextView: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.scrollerStyle = .overlay
 
-        let textView = NSTextView()
+        // Force TextKit 1 via explicit NSLayoutManager stack (textLayoutManager is read-only)
+        let ts = NSTextStorage()
+        let lm = NSLayoutManager()
+        ts.addLayoutManager(lm)
+        let tc = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+        tc.widthTracksTextView = true
+        tc.lineFragmentPadding = 0
+        lm.addTextContainer(tc)
+        let textView: NSTextView = NSTextView(frame: NSRect.zero, textContainer: tc)
         textView.isEditable = false
         textView.isSelectable = true
         textView.isRichText = true
         textView.drawsBackground = false
-        textView.backgroundColor = .clear
+        textView.backgroundColor = NSColor.clear
         textView.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
-        textView.textColor = .labelColor
+        textView.textColor = NSColor.labelColor
         textView.textContainerInset = NSSize(width: 0, height: 0)
-        textView.textContainer?.lineFragmentPadding = 0
-        textView.textContainer?.widthTracksTextView = true
-        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
+        textView.autoresizingMask = NSView.AutoresizingMask.width
         textView.textStorage?.setAttributedString(attributedText)
 
         scrollView.documentView = textView
@@ -3641,22 +3701,6 @@ private struct PricingBreakdownPopover: View {
             return "<0.01x"
         }
         return String(format: "%.2fx", ratio)
-    }
-}
-
-private struct PanelAppearanceSyncView: NSViewRepresentable {
-    let isDarkMode: Bool
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
-        view.isHidden = true
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        let appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
-        nsView.window?.appearance = appearance
-        nsView.window?.backgroundColor = .clear
     }
 }
 
