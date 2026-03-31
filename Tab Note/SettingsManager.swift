@@ -328,6 +328,14 @@ class SettingsManager: ObservableObject {
         get { defaults.object(forKey: "maxTabRows") as? Int ?? 2 }
         set { objectWillChange.send(); defaults.set(newValue, forKey: "maxTabRows") }
     }
+    var tabFontSize: CGFloat {
+        get { defaults.object(forKey: "tabFontSize") as? CGFloat ?? 10 }
+        set { objectWillChange.send(); defaults.set(newValue, forKey: "tabFontSize") }
+    }
+    var tabHPadding: CGFloat {
+        get { defaults.object(forKey: "tabHPadding") as? CGFloat ?? 8 }
+        set { objectWillChange.send(); defaults.set(newValue, forKey: "tabHPadding") }
+    }
     var autoCheckUpdates: Bool {
         get { defaults.object(forKey: "autoCheckUpdates") as? Bool ?? true }
         set { objectWillChange.send(); defaults.set(newValue, forKey: "autoCheckUpdates") }

@@ -203,6 +203,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
             // Arrow keys inject .numericPad + .function — strip before comparing.
             let arrowFlags = flags.subtracting([.numericPad, .function, .help])
 
+            if normalizedFlags == .command && event.keyCode == 2 {   // Cmd+D = toggle dark/light mode
+                self.settingsManager.isDarkMode.toggle(); return nil
+            }
             if normalizedFlags == .command && event.keyCode == 17 { self.notesStore.createNote(in: windowID); return nil }
             if flags == .command && event.keyCode == 49 { self.notesStore.deleteSelectedNote(in: windowID); return nil }
             if normalizedFlags == [.command, .shift] && event.keyCode == 17 { self.notesStore.recoverLastDeletedNote(); return nil }
@@ -211,6 +214,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
             }
             if normalizedFlags == .command && event.keyCode == 3 {    // Cmd+F = search
                 NotificationCenter.default.post(name: .toggleSearchBar, object: windowID); return nil
+            }
+            if normalizedFlags == .command && event.keyCode == 5 {    // Cmd+G = toggle horizontal grid
+                NotificationCenter.default.post(name: .gridHorizontalToggle, object: windowID); return nil
             }
             if self.isCommandShiftH(event: event, flags: normalizedFlags) {   // Cmd+Shift+H = toggle tab area visibility
                 NotificationCenter.default.post(name: .toggleTabAreaVisibility, object: windowID); return nil
@@ -333,7 +339,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
             setupPanel()
             return
         }
-        panelsByWindowID.values.contains(where: \.isVisible) ? hidePanel() : showAllPanels()
+
+        let visiblePanels = panelsByWindowID.values.filter(\.isVisible)
+
+        if visiblePanels.isEmpty {
+            // Panels are hidden — show them
+            showAllPanels()
+        } else if visiblePanels.allSatisfy({ isPanel($0, fullyVisibleAndFront: true) }) {
+            // All panels are visible AND in front — hide them
+            hidePanel()
+        } else {
+            // Panels are visible but behind other windows — bring to front
+            showAllPanels()
+        }
+    }
+
+    /// Returns true only when the panel is visible, the app is active, and the panel
+    /// is not obscured by another app's window (i.e. it's at or above the key window level).
+    private func isPanel(_ panel: NSPanel, fullyVisibleAndFront: Bool) -> Bool {
+        guard panel.isVisible else { return false }
+        // If the app itself isn't active, panels are behind other apps
+        guard NSApp.isActive else { return false }
+        // Check if this panel (or another of our panels) is the key window
+        // If none of our panels are key, they're behind something
+        let ourPanelIsKey = panelsByWindowID.values.contains(where: { $0.isKeyWindow })
+        let settingsIsKey = settingsPanel?.isKeyWindow == true
+        return ourPanelIsKey || settingsIsKey
     }
 
     func positionAndShowPanel(windowID: String) {
@@ -617,6 +648,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         }
 
         panel.setFrameOrigin(clampedPanelOrigin(origin, size: panelSize, visibleFrame: visibleFrame))
+    }
+
+    func panelWidth(for windowID: String) -> CGFloat? {
+        panelsByWindowID[windowID]?.frame.width
+    }
+
+    func resizePanel(windowID: String, toWidth newWidth: CGFloat, animated: Bool = true) {
+        guard let panel = panelsByWindowID[windowID] else { return }
+        var frame = panel.frame
+        let delta = newWidth - frame.width
+        frame.origin.x -= delta / 2
+        frame.size.width = newWidth
+        if let sf = (panel.screen ?? NSScreen.main)?.visibleFrame {
+            frame.origin.x = max(sf.minX, min(frame.origin.x, sf.maxX - newWidth))
+        }
+        if animated {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.2
+                panel.animator().setFrame(frame, display: true)
+            }
+        } else {
+            panel.setFrame(frame, display: false)
+        }
     }
 
     private func clampedPanelOrigin(_ origin: NSPoint, size: NSSize, visibleFrame: NSRect) -> NSPoint {

@@ -150,16 +150,22 @@ struct PlusButton: View {
     @EnvironmentObject var store: NotesStore
     @EnvironmentObject var settings: SettingsManager
     let windowID: String
+    @State private var isHovering = false
 
     var body: some View {
         Button { store.createNote(in: windowID) } label: {
             Text("+")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(settings.isDarkMode ? .white.opacity(0.7) : .black.opacity(0.5))
-                .padding(.horizontal, 7).padding(.vertical, 2)
-                .background(Capsule()
-                    .fill(settings.isDarkMode ? Color.white.opacity(0.08) : Color.black.opacity(0.06)))
+                .font(.system(size: 11, weight: .regular))
+                .foregroundColor(
+                    isHovering
+                        ? (settings.isDarkMode ? .white.opacity(0.82) : .black.opacity(0.72))
+                        : (settings.isDarkMode ? .white.opacity(0.38) : .black.opacity(0.30))
+                )
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain).nonMovableWindow()
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .nonMovableWindow()
     }
 }

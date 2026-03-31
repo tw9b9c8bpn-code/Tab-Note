@@ -38,6 +38,9 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// Sections shown in the main nav list (About is pinned to the bottom separately)
+    static var navCases: [SettingsSection] { [.general, .appearance, .behavior, .data] }
+
     var icon: String {
         switch self {
         case .general:    return "gear"
@@ -124,7 +127,7 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .topTrailing) {
             panelBackground
 
             HStack(spacing: 0) {
@@ -137,6 +140,10 @@ struct SettingsView: View {
 
                 detailPanel
             }
+
+            CloseButton(isDarkMode: settings.isDarkMode, action: closeSettings)
+                .padding(.top, Spacing.sm)
+                .padding(.trailing, Spacing.sm)
         }
         .frame(minWidth: 580, minHeight: 460)
     }
@@ -153,7 +160,7 @@ struct SettingsView: View {
                 .padding(.bottom, Spacing.sm)
 
             VStack(alignment: .leading, spacing: Spacing.xxs) {
-                ForEach(SettingsSection.allCases) { section in
+                ForEach(SettingsSection.navCases) { section in
                     SidebarRow(
                         section: section,
                         isSelected: selectedSection == section,
@@ -172,9 +179,27 @@ struct SettingsView: View {
 
             Spacer()
 
-            CloseButton(isDarkMode: settings.isDarkMode, action: closeSettings)
-                .padding(.horizontal, Spacing.md)
-                .padding(.bottom, Spacing.md)
+            Divider()
+                .opacity(settings.isDarkMode ? 0.12 : 0.10)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.bottom, Spacing.xxs)
+
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                SidebarRow(
+                    section: .about,
+                    isSelected: selectedSection == .about,
+                    accentColor: accentColor,
+                    primaryTextColor: primaryTextColor,
+                    secondaryTextColor: secondaryTextColor,
+                    isDarkMode: settings.isDarkMode
+                ) {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        selectedSection = .about
+                    }
+                }
+            }
+            .padding(.horizontal, Spacing.xs)
+            .padding(.bottom, Spacing.xs)
         }
     }
 
@@ -182,11 +207,11 @@ struct SettingsView: View {
 
     private var detailPanel: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: Spacing.lg) {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
                 pageHeader
                 sectionContent
             }
-            .padding(Spacing.lg)
+            .padding(Spacing.md)
             .frame(maxWidth: 640, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -219,7 +244,7 @@ struct SettingsView: View {
     // MARK: - General
 
     private var generalSection: some View {
-        VStack(spacing: Spacing.lg) {
+        VStack(spacing: Spacing.xs) {
             settingsCard {
                 sectionHeader(
                     "Global Hotkey",
@@ -270,7 +295,7 @@ struct SettingsView: View {
     // MARK: - Appearance
 
     private var appearanceSection: some View {
-        VStack(spacing: Spacing.lg) {
+        VStack(spacing: Spacing.xs) {
             settingsCard {
                 sectionHeader("Color Mode", subtitle: "Switch between dark and light interface styles.")
 
@@ -292,13 +317,35 @@ struct SettingsView: View {
                     options: FontChoice.allCases.map { ($0.displayName, $0) }
                 )
             }
+
+            settingsCard {
+                sectionHeader("Tabs", subtitle: "Adjust the size and density of tab items.")
+
+                stepperRow(
+                    title: "Font Size",
+                    subtitle: "Size of text inside each tab pill.",
+                    value: Binding(get: { settings.tabFontSize }, set: { settings.tabFontSize = $0 }),
+                    range: 8...14,
+                    step: 1,
+                    format: "%.0fpt"
+                )
+
+                stepperRow(
+                    title: "Horizontal Padding",
+                    subtitle: "Space on each side of tab label text.",
+                    value: Binding(get: { settings.tabHPadding }, set: { settings.tabHPadding = $0 }),
+                    range: 4...16,
+                    step: 2,
+                    format: "%.0fpx"
+                )
+            }
         }
     }
 
     // MARK: - Behavior
 
     private var behaviorSection: some View {
-        VStack(spacing: Spacing.lg) {
+        VStack(spacing: Spacing.xs) {
             settingsCard {
                 sectionHeader("Window Position", subtitle: "Choose where Tab Note appears when you invoke it.")
 
@@ -332,7 +379,7 @@ struct SettingsView: View {
     // MARK: - Data
 
     private var dataSection: some View {
-        VStack(spacing: Spacing.lg) {
+        VStack(spacing: Spacing.xs) {
             settingsCard {
                 sectionHeader(
                     "Deleted Notes",
@@ -398,7 +445,7 @@ struct SettingsView: View {
     // MARK: - About
 
     private var aboutSection: some View {
-        VStack(spacing: Spacing.lg) {
+        VStack(spacing: Spacing.xs) {
             settingsCard {
                 HStack(spacing: Spacing.md) {
                     RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
@@ -554,24 +601,35 @@ struct SettingsView: View {
     }
 
     private func toggleRow(title: String, subtitle: String, isOn: Binding<Bool>) -> some View {
-        HStack(alignment: .center, spacing: Spacing.md) {
-            VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text(title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(primaryTextColor)
+        ToggleRow(
+            title: title,
+            subtitle: subtitle,
+            isOn: isOn,
+            isDarkMode: settings.isDarkMode,
+            primaryTextColor: primaryTextColor,
+            secondaryTextColor: secondaryTextColor
+        )
+    }
 
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(secondaryTextColor)
-            }
-
-            Spacer()
-
-            Toggle("", isOn: isOn)
-                .toggleStyle(.switch)
-                .labelsHidden()
-                .scaleEffect(0.85)
-        }
+    private func stepperRow(
+        title: String,
+        subtitle: String,
+        value: Binding<CGFloat>,
+        range: ClosedRange<CGFloat>,
+        step: CGFloat,
+        format: String
+    ) -> some View {
+        StepperRow(
+            title: title,
+            subtitle: subtitle,
+            value: value,
+            range: range,
+            step: step,
+            format: format,
+            isDarkMode: settings.isDarkMode,
+            primaryTextColor: primaryTextColor,
+            secondaryTextColor: secondaryTextColor
+        )
     }
 
     private func fieldLabel(_ title: String) -> some View {
@@ -655,6 +713,154 @@ struct SettingsView: View {
     private let hotkeyKeys: [(Int, String)] = SettingsManager.hotkeyKeyNames
         .map { ($0.key, $0.value) }
         .sorted { $0.1 < $1.1 }
+}
+
+// MARK: - Toggle Row
+
+private struct ToggleRow: View {
+    let title: String
+    let subtitle: String
+    let isOn: Binding<Bool>
+    let isDarkMode: Bool
+    let primaryTextColor: Color
+    let secondaryTextColor: Color
+
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(primaryTextColor)
+
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(secondaryTextColor)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: isOn)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .scaleEffect(0.85)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isHovering
+                    ? (isDarkMode ? Color.white.opacity(0.04) : Color.black.opacity(0.03))
+                    : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .onHover { isHovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovering)
+    }
+}
+
+// MARK: - Stepper Row
+
+private struct StepperRow: View {
+    let title: String
+    let subtitle: String
+    let value: Binding<CGFloat>
+    let range: ClosedRange<CGFloat>
+    let step: CGFloat
+    let format: String
+    let isDarkMode: Bool
+    let primaryTextColor: Color
+    let secondaryTextColor: Color
+
+    @State private var isHovering = false
+
+    private var accentColor: Color {
+        isDarkMode
+            ? Color(red: 0.89, green: 0.49, blue: 0.18)
+            : Color(red: 0.90, green: 0.50, blue: 0.16)
+    }
+
+    private var btnFill: Color {
+        isDarkMode ? Color.white.opacity(0.08) : Color.white.opacity(0.84)
+    }
+    private var btnStroke: Color {
+        isDarkMode ? Color.white.opacity(0.09) : Color.black.opacity(0.08)
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(primaryTextColor)
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(secondaryTextColor)
+            }
+
+            Spacer()
+
+            HStack(spacing: 0) {
+                StepperButton(label: "−", isDarkMode: isDarkMode) {
+                    if value.wrappedValue - step >= range.lowerBound {
+                        value.wrappedValue -= step
+                    }
+                }
+
+                Text(String(format: format, value.wrappedValue))
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(primaryTextColor)
+                    .frame(minWidth: 36)
+                    .multilineTextAlignment(.center)
+
+                StepperButton(label: "+", isDarkMode: isDarkMode) {
+                    if value.wrappedValue + step <= range.upperBound {
+                        value.wrappedValue += step
+                    }
+                }
+            }
+            .background(
+                Capsule().fill(isDarkMode ? Color.white.opacity(0.05) : Color.white.opacity(0.72))
+            )
+            .overlay(Capsule().stroke(btnStroke, lineWidth: 1))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isHovering
+                    ? (isDarkMode ? Color.white.opacity(0.04) : Color.black.opacity(0.03))
+                    : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .onHover { isHovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovering)
+    }
+}
+
+private struct StepperButton: View {
+    let label: String
+    let isDarkMode: Bool
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(
+                    isHovering
+                        ? (isDarkMode ? Color.white.opacity(0.9) : Color.black.opacity(0.78))
+                        : (isDarkMode ? Color.white.opacity(0.6) : Color.black.opacity(0.5))
+                )
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .animation(.easeOut(duration: 0.10), value: isHovering)
+    }
 }
 
 // MARK: - Close Button

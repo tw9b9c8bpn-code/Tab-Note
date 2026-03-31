@@ -13,19 +13,15 @@ struct AIResult: Identifiable, Equatable {
     let content: String
 }
 
-enum SplitDirection {
-    case vertical   // side by side (left | right)
-    case horizontal // top / bottom
-}
+// MARK: - Grid Cell State
 
-private enum SplitPaneKind {
-    case primary
-    case secondary
-}
-
-private struct SplitPaneState: Equatable {
+private struct GridCellState: Equatable, Identifiable {
+    let row: Int
+    let col: Int
     var noteIds: [String]
     var selectedNoteId: String
+
+    var id: String { "\(row)-\(col)" }
 }
 
 struct ContentView: View {
@@ -37,10 +33,14 @@ struct ContentView: View {
     @State private var searchQuery = ""
     @State private var searchRequestID = 0
     @State private var isTabAreaHidden = false
-    @State private var primarySplitPane: SplitPaneState? = nil
-    @State private var secondarySplitPane: SplitPaneState? = nil
-    @State private var splitDirection: SplitDirection = .vertical
-    @State private var activeSplitPane: SplitPaneKind = .primary
+
+    // Grid state
+    @State private var gridRows = 1
+    @State private var gridCols = 1
+    @State private var gridCells: [GridCellState] = []
+    @State private var activeCell: String = "0-0"  // "row-col"
+    @State private var preGridWidth: CGFloat?  // window width before entering grid mode
+
     @FocusState private var isSearchFieldFocused: Bool
 
     init(windowID: String = NotesStore.mainWindowID) {
@@ -71,18 +71,8 @@ struct ContentView: View {
         store.selectedNote(in: windowID)
     }
 
-    private var splitPanes: (primary: SplitPaneState, secondary: SplitPaneState)? {
-        guard let primary = primarySplitPane,
-              let secondary = secondarySplitPane,
-              !primary.noteIds.isEmpty,
-              !secondary.noteIds.isEmpty else {
-            return nil
-        }
-        return (primary, secondary)
-    }
-
-    private var isSplitMode: Bool {
-        splitPanes != nil
+    private var isGridMode: Bool {
+        gridRows > 1 || gridCols > 1
     }
 
     private var editorBinding: Binding<String> {
@@ -97,66 +87,25 @@ struct ContentView: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            // Main layout
             VStack(spacing: 0) {
-                if !isTabAreaHidden && !isSplitMode {
+                if !isTabAreaHidden && !isGridMode {
                     TabBarView(windowID: windowID)
                     Divider().opacity(settings.isDarkMode ? 0.3 : 0.5)
                 }
 
-                // Search bar (appears on demand)
+                // Search bar
                 if showSearch {
-                    HStack(spacing: 6) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                        TextField("Search…", text: $searchQuery)
-                            .font(.system(size: 12))
-                            .textFieldStyle(.plain)
-                            .focused($isSearchFieldFocused)
-                            .onSubmit { searchRequestID += 1 }
-                        if !searchQuery.isEmpty {
-                            Button(action: { searchQuery = "" }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        Button(action: { setSearchVisible(false) }) {
-                            Text("Done")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(settings.isDarkMode ? Color(white: 0.17) : Color(white: 0.94))
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    searchBar
                 }
 
-                // Editor area — single or split
-                if let splitPanes {
-                    if splitDirection == .vertical {
-                        HStack(spacing: 0) {
-                            splitPaneView(splitPanes.primary, kind: .primary, showsCloseButton: false)
-                            Divider()
-                            splitPaneView(splitPanes.secondary, kind: .secondary, showsCloseButton: true)
-                        }
-                    } else {
-                        VStack(spacing: 0) {
-                            splitPaneView(splitPanes.primary, kind: .primary, showsCloseButton: false)
-                            Divider()
-                            splitPaneView(splitPanes.secondary, kind: .secondary, showsCloseButton: true)
-                        }
-                    }
+                // Editor area — single or grid
+                if isGridMode {
+                    gridEditorArea
                 } else {
                     primaryEditor
                 }
 
                 Divider().opacity(settings.isDarkMode ? 0.3 : 0.5)
-
                 FootnoteBarView(windowID: windowID)
             }
             .background(RightClickCatcherView(onThemeSelected: { hex in setNoteColor(hex) }))
@@ -191,25 +140,86 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .splitViewRequested)) { note in
             guard let info = note.userInfo,
-                  let noteId = info["noteId"] as? String,
                   let dirStr = info["direction"] as? String,
                   let winId = info["windowID"] as? String,
                   winId == windowID else { return }
-            let dir: SplitDirection = dirStr == "horizontal" ? .horizontal : .vertical
-            if isSplitMode,
-               (primarySplitPane?.noteIds.contains(noteId) == true || secondarySplitPane?.noteIds.contains(noteId) == true),
-               splitDirection == dir {
-                closeSplit(selecting: selectedNoteID)
+            // Map legacy split requests to grid: vertical = 1x2, horizontal = 2x1
+            if isGridMode && ((dirStr == "vertical" && gridRows == 1 && gridCols == 2)
+                              || (dirStr == "horizontal" && gridRows == 2 && gridCols == 1)) {
+                exitGridMode()
             } else {
-                openSplit(targetNoteId: noteId, direction: dir)
+                let (r, c) = dirStr == "horizontal" ? (2, 1) : (1, 2)
+                enterGridMode(rows: r, cols: c)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .gridViewRequested)) { note in
+            guard let info = note.userInfo,
+                  let rows = info["rows"] as? Int,
+                  let cols = info["cols"] as? Int,
+                  let winId = info["windowID"] as? String,
+                  winId == windowID else { return }
+            if rows <= 1 && cols <= 1 {
+                exitGridMode()
+            } else {
+                enterGridMode(rows: rows, cols: cols)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .gridHorizontalToggle)) { note in
+            guard let winId = note.object as? String, winId == windowID else { return }
+            // If already in a 1-row horizontal grid, toggle off
+            if isGridMode && gridRows == 1 {
+                exitGridMode()
+            } else {
+                // Count notes with content (cap at 5)
+                let allIds = store.visualOrderedNoteIds(in: windowID)
+                let withContent = allIds.filter { id in
+                    guard let n = store.notes.first(where: { $0.id == id }) else { return false }
+                    return !n.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                }
+                let cols = max(2, min(5, withContent.isEmpty ? allIds.count : withContent.count))
+                enterGridMode(rows: 1, cols: cols)
             }
         }
         .onChange(of: selectedNoteID) { _, newValue in
-            syncSplitSelection(with: newValue)
+            syncGridSelection(with: newValue)
         }
         .onReceive(store.$notes) { _ in
-            reconcileSplitState()
+            reconcileGridState()
         }
+    }
+
+    // MARK: - Search Bar
+
+    @ViewBuilder
+    private var searchBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+            TextField("Search…", text: $searchQuery)
+                .font(.system(size: 12))
+                .textFieldStyle(.plain)
+                .focused($isSearchFieldFocused)
+                .onSubmit { searchRequestID += 1 }
+            if !searchQuery.isEmpty {
+                Button(action: { searchQuery = "" }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            Button(action: { setSearchVisible(false) }) {
+                Text("Done")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(settings.isDarkMode ? Color(white: 0.17) : Color(white: 0.94))
+        .transition(.move(edge: .top).combined(with: .opacity))
     }
 
     // MARK: - Editor subviews
@@ -235,44 +245,66 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    // MARK: - Grid Editor Area
+
     @ViewBuilder
-    private func splitPaneView(
-        _ pane: SplitPaneState,
-        kind: SplitPaneKind,
-        showsCloseButton: Bool
-    ) -> some View {
+    private var gridEditorArea: some View {
         VStack(spacing: 0) {
-            SplitPaneTabBar(
-                notes: pane.noteIds.compactMap { note(for: $0) },
-                selectedNoteId: pane.selectedNoteId,
+            ForEach(0..<gridRows, id: \.self) { row in
+                if row > 0 {
+                    Divider()
+                }
+                HStack(spacing: 0) {
+                    ForEach(0..<gridCols, id: \.self) { col in
+                        if col > 0 {
+                            Divider()
+                        }
+                        let cellId = "\(row)-\(col)"
+                        if let cellIndex = gridCells.firstIndex(where: { $0.id == cellId }) {
+                            gridCellView(cell: gridCells[cellIndex])
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func gridCellView(cell: GridCellState) -> some View {
+        let isActive = activeCell == cell.id
+        VStack(spacing: 0) {
+            GridCellTabBar(
+                notes: cell.noteIds.compactMap { note(for: $0) },
+                selectedNoteId: cell.selectedNoteId,
                 isDarkMode: settings.isDarkMode,
                 appThemeHex: settings.appThemeHex,
                 windowID: windowID,
-                showsCloseSplitButton: showsCloseButton,
+                isActiveCell: isActive,
+                tabFontSize: settings.tabFontSize,
+                tabHPadding: settings.tabHPadding,
                 onSelectNote: { noteId in
-                    selectPaneNote(noteId, in: kind)
+                    selectCellNote(noteId, in: cell.id)
                 },
                 onAddNote: {
-                    addNote(to: kind)
-                },
-                onCloseSplit: {
-                    closeSplit(selecting: pane.selectedNoteId)
+                    addNote(to: cell.id)
                 }
             )
             Divider().opacity(settings.isDarkMode ? 0.22 : 0.34)
             noteEditorView(
-                noteId: pane.selectedNoteId,
-                searchQuery: activeSplitPane == kind ? $searchQuery : .constant(""),
-                searchRequestID: activeSplitPane == kind ? searchRequestID : 0,
+                noteId: cell.selectedNoteId,
+                searchQuery: isActive ? $searchQuery : .constant(""),
+                searchRequestID: isActive ? searchRequestID : 0,
                 onBecameActive: {
-                    activateSplitPane(kind)
+                    activateCell(cell.id)
                 }
             )
-            .id("\(kind)-\(pane.selectedNoteId)")
+            .id("grid-\(cell.id)-\(cell.selectedNoteId)")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+
+    // MARK: - Helpers
 
     private func toggleSearchBar() {
         setSearchVisible(!showSearch)
@@ -281,14 +313,10 @@ struct ContentView: View {
     private func setSearchVisible(_ visible: Bool) {
         withAnimation(.easeOut(duration: 0.15)) {
             showSearch = visible
-            if !visible {
-                searchQuery = ""
-            }
+            if !visible { searchQuery = "" }
         }
         if visible {
-            DispatchQueue.main.async {
-                isSearchFieldFocused = true
-            }
+            DispatchQueue.main.async { isSearchFieldFocused = true }
         }
     }
 
@@ -334,167 +362,221 @@ struct ContentView: View {
         )
     }
 
-    private func openSplit(targetNoteId: String, direction: SplitDirection) {
-        let orderedIds = store.visualOrderedNoteIds(in: windowID)
-        guard orderedIds.count > 1,
-              let targetIndex = orderedIds.firstIndex(of: targetNoteId) else {
-            NSSound.beep()
-            return
-        }
+    // MARK: - Grid Mode Logic
 
-        let primaryIds: [String]
-        let secondaryIds: [String]
-        if targetIndex == 0 {
-            primaryIds = Array(orderedIds.dropFirst())
-            secondaryIds = [targetNoteId]
-        } else {
-            primaryIds = Array(orderedIds[..<targetIndex])
-            secondaryIds = Array(orderedIds[targetIndex...])
-        }
+    // MARK: - Grid Note Helpers
 
-        guard !primaryIds.isEmpty, !secondaryIds.isEmpty else {
-            NSSound.beep()
-            return
+    /// Delete every note in this window whose title is purely numeric AND whose
+    /// content is blank — these are the auto-created placeholders grid mode spawns.
+    private func cleanupAutoEmptyNotes() {
+        let victims = store.notes.filter { n in
+            guard n.windowID == windowID else { return false }
+            let titleIsNumber = !n.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && n.title.trimmingCharacters(in: .whitespacesAndNewlines).allSatisfy(\.isNumber)
+            let contentIsEmpty = n.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return titleIsNumber && contentIsEmpty
         }
-
-        primarySplitPane = SplitPaneState(
-            noteIds: primaryIds,
-            selectedNoteId: primaryIds.last ?? primaryIds[0]
-        )
-        secondarySplitPane = SplitPaneState(
-            noteIds: secondaryIds,
-            selectedNoteId: targetNoteId
-        )
-        splitDirection = direction
-        activeSplitPane = .secondary
-        store.setSelectedNoteId(targetNoteId, in: windowID)
+        // Delete from last to first to avoid index shifting issues
+        for note in victims {
+            store.deleteNote(id: note.id)
+        }
     }
 
-    private func closeSplit(selecting noteId: String?) {
-        primarySplitPane = nil
-        secondarySplitPane = nil
+    private func enterGridMode(rows: Int, cols: Int) {
+        let totalCells = rows * cols
+
+        // Save the single-pane width once, before first grid expansion
+        if !isGridMode, let currentWidth = AppDelegate.shared?.panelWidth(for: windowID) {
+            preGridWidth = currentWidth
+        }
+
+        // Resize window to fit the new column count (height unchanged)
+        if let singleWidth = preGridWidth, cols > 1 {
+            AppDelegate.shared?.resizePanel(windowID: windowID, toWidth: singleWidth * CGFloat(cols))
+        }
+
+        // Wipe leftover auto-empty notes from any previous grid before re-distributing
+        cleanupAutoEmptyNotes()
+
+        // Build prioritised pool: notes with content first, blank ones after
+        let allNotes = store.visualOrderedNoteIds(in: windowID).compactMap { id in
+            store.notes.first(where: { $0.id == id && $0.windowID == windowID })
+        }
+        guard !allNotes.isEmpty else { return }
+
+        let withContent    = allNotes.filter { !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let withoutContent = allNotes.filter {  $0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        var availableIds   = (withContent + withoutContent).map(\.id)
+
+        // Create placeholder notes to fill any remaining cells
+        while availableIds.count < totalCells {
+            if let newId = store.createNote(in: windowID) {
+                availableIds.append(newId)
+            } else { break }
+        }
+
+        // Distribute across cells — each cell gets at least 1 note
+        var cells: [GridCellState] = []
+        let perCell = max(1, availableIds.count / totalCells)
+        var idIndex = 0
+
+        for row in 0..<rows {
+            for col in 0..<cols {
+                let cellIndex  = row * cols + col
+                let isLastCell = cellIndex == totalCells - 1
+                let count  = isLastCell ? max(1, availableIds.count - idIndex) : perCell
+                let slice  = Array(availableIds[idIndex..<min(idIndex + count, availableIds.count)])
+                idIndex   += slice.count
+
+                // Active note = first with content; fall back to first in slice
+                let activeId = slice.first(where: { id in
+                    guard let n = store.notes.first(where: { $0.id == id }) else { return false }
+                    return !n.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                }) ?? slice.first ?? ""
+
+                cells.append(GridCellState(row: row, col: col, noteIds: slice, selectedNoteId: activeId))
+            }
+        }
+
+        withAnimation(.easeInOut(duration: 0.2)) {
+            gridRows  = rows
+            gridCols  = cols
+            gridCells = cells
+            activeCell = "0-0"
+        }
+
+        if let firstActive = cells.first?.selectedNoteId, !firstActive.isEmpty {
+            store.setSelectedNoteId(firstActive, in: windowID)
+        }
+    }
+
+    private func exitGridMode() {
+        cleanupAutoEmptyNotes()
+
+        // Restore the window to its pre-split width
+        if let savedWidth = preGridWidth {
+            AppDelegate.shared?.resizePanel(windowID: windowID, toWidth: savedWidth)
+            preGridWidth = nil
+        }
+
+        let noteId = selectedNoteID
+        withAnimation(.easeInOut(duration: 0.2)) {
+            gridRows  = 1
+            gridCols  = 1
+            gridCells = []
+        }
         if let noteId, selectedNoteID != noteId {
             store.setSelectedNoteId(noteId, in: windowID)
         }
     }
 
-    private func syncSplitSelection(with newSelection: String?) {
-        guard splitPanes != nil,
-              let newSelection,
-              note(for: newSelection) != nil else {
-            return
+    private func selectCellNote(_ noteId: String, in cellId: String) {
+        if let idx = gridCells.firstIndex(where: { $0.id == cellId }) {
+            gridCells[idx].selectedNoteId = noteId
         }
-
-        if primarySplitPane?.noteIds.contains(newSelection) == true {
-            primarySplitPane?.selectedNoteId = newSelection
-            activeSplitPane = .primary
-            return
-        }
-
-        if secondarySplitPane?.noteIds.contains(newSelection) == true {
-            secondarySplitPane?.selectedNoteId = newSelection
-            activeSplitPane = .secondary
-            return
-        }
-
-        reconcileSplitState()
-    }
-
-    private func selectPaneNote(_ noteId: String, in kind: SplitPaneKind) {
-        switch kind {
-        case .primary:
-            primarySplitPane?.selectedNoteId = noteId
-        case .secondary:
-            secondarySplitPane?.selectedNoteId = noteId
-        }
-        activeSplitPane = kind
+        activeCell = cellId
         if selectedNoteID != noteId {
             store.setSelectedNoteId(noteId, in: windowID)
         }
     }
 
-    private func activateSplitPane(_ kind: SplitPaneKind) {
-        switch kind {
-        case .primary:
-            if let noteId = primarySplitPane?.selectedNoteId {
-                selectPaneNote(noteId, in: .primary)
-            }
-        case .secondary:
-            if let noteId = secondarySplitPane?.selectedNoteId {
-                selectPaneNote(noteId, in: .secondary)
+    private func activateCell(_ cellId: String) {
+        activeCell = cellId
+        if let cell = gridCells.first(where: { $0.id == cellId }) {
+            if selectedNoteID != cell.selectedNoteId {
+                store.setSelectedNoteId(cell.selectedNoteId, in: windowID)
             }
         }
     }
 
-    private func addNote(to kind: SplitPaneKind) {
+    private func addNote(to cellId: String) {
         guard let noteId = store.createNote(in: windowID) else { return }
-        switch kind {
-        case .primary:
-            primarySplitPane?.noteIds.append(noteId)
-            primarySplitPane?.selectedNoteId = noteId
-        case .secondary:
-            secondarySplitPane?.noteIds.append(noteId)
-            secondarySplitPane?.selectedNoteId = noteId
+        if let idx = gridCells.firstIndex(where: { $0.id == cellId }) {
+            gridCells[idx].noteIds.append(noteId)
+            gridCells[idx].selectedNoteId = noteId
         }
-        activeSplitPane = kind
+        activeCell = cellId
     }
 
-    private func reconcileSplitState() {
-        guard var primary = primarySplitPane,
-              var secondary = secondarySplitPane else {
-            return
+    private func syncGridSelection(with newSelection: String?) {
+        guard isGridMode, let newSelection, note(for: newSelection) != nil else { return }
+
+        for cell in gridCells {
+            if cell.noteIds.contains(newSelection) {
+                if let idx = gridCells.firstIndex(where: { $0.id == cell.id }) {
+                    gridCells[idx].selectedNoteId = newSelection
+                }
+                activeCell = cell.id
+                return
+            }
         }
+
+        reconcileGridState()
+    }
+
+    private func reconcileGridState() {
+        guard isGridMode, !gridCells.isEmpty else { return }
 
         let orderedIds = store.visualOrderedNoteIds(in: windowID)
         let currentIdSet = Set(orderedIds)
 
-        var primarySet = Set(primary.noteIds.filter { currentIdSet.contains($0) })
-        var secondarySet = Set(secondary.noteIds.filter { currentIdSet.contains($0) })
-        secondarySet.subtract(primarySet)
+        // Remove deleted notes from cells
+        var updatedCells = gridCells
+        var assignedIds = Set<String>()
 
-        let assignedIds = primarySet.union(secondarySet)
-        let unassignedIds = orderedIds.filter { !assignedIds.contains($0) }
-        if !unassignedIds.isEmpty {
-            switch activeSplitPane {
-            case .primary:
-                primarySet.formUnion(unassignedIds)
-            case .secondary:
-                secondarySet.formUnion(unassignedIds)
+        for i in updatedCells.indices {
+            updatedCells[i].noteIds = updatedCells[i].noteIds.filter { currentIdSet.contains($0) && !assignedIds.contains($0) }
+            assignedIds.formUnion(updatedCells[i].noteIds)
+        }
+
+        // Assign unassigned notes to active cell
+        let unassigned = orderedIds.filter { !assignedIds.contains($0) }
+        if !unassigned.isEmpty {
+            if let idx = updatedCells.firstIndex(where: { $0.id == activeCell }) {
+                updatedCells[idx].noteIds.append(contentsOf: unassigned)
+            } else if !updatedCells.isEmpty {
+                updatedCells[0].noteIds.append(contentsOf: unassigned)
             }
         }
 
-        let primaryIds = orderedIds.filter { primarySet.contains($0) }
-        let secondaryIds = orderedIds.filter { secondarySet.contains($0) }
-
-        guard !primaryIds.isEmpty, !secondaryIds.isEmpty else {
-            let fallbackSelection = note(for: selectedNoteID) != nil ? selectedNoteID : orderedIds.first
-            closeSplit(selecting: fallbackSelection)
-            return
+        // Check if any cell is empty — if so, collapse grid if we can't fill it
+        let emptyCells = updatedCells.filter { $0.noteIds.isEmpty }
+        if !emptyCells.isEmpty {
+            // Try to redistribute from cells with multiple notes
+            for emptyCell in emptyCells {
+                guard let emptyIdx = updatedCells.firstIndex(where: { $0.id == emptyCell.id }) else { continue }
+                // Find a donor cell with more than 1 note
+                if let donorIdx = updatedCells.firstIndex(where: { $0.noteIds.count > 1 }) {
+                    let donated = updatedCells[donorIdx].noteIds.removeLast()
+                    updatedCells[emptyIdx].noteIds.append(donated)
+                } else {
+                    // Not enough notes to fill grid — exit grid mode
+                    exitGridMode()
+                    return
+                }
+            }
         }
 
-        primary.noteIds = primaryIds
-        secondary.noteIds = secondaryIds
-
-        if !primaryIds.contains(primary.selectedNoteId) {
-            primary.selectedNoteId = primaryIds.last ?? primaryIds[0]
-        }
-        if !secondaryIds.contains(secondary.selectedNoteId) {
-            secondary.selectedNoteId = secondaryIds.first ?? secondaryIds[0]
+        // Fix selectedNoteId for each cell
+        for i in updatedCells.indices {
+            if !updatedCells[i].noteIds.contains(updatedCells[i].selectedNoteId) {
+                updatedCells[i].selectedNoteId = updatedCells[i].noteIds.first ?? ""
+            }
         }
 
-        primarySplitPane = primary
-        secondarySplitPane = secondary
+        gridCells = updatedCells
 
-        let activeSelection = activeSplitPane == .primary
-            ? primary.selectedNoteId
-            : secondary.selectedNoteId
-        if selectedNoteID != activeSelection {
-            store.setSelectedNoteId(activeSelection, in: windowID)
+        // Sync window-level selection with active cell
+        if let cell = gridCells.first(where: { $0.id == activeCell }),
+           selectedNoteID != cell.selectedNoteId {
+            store.setSelectedNoteId(cell.selectedNoteId, in: windowID)
         }
     }
 }
 
-private func splitTabAccentColor(for appThemeHex: String) -> Color {
+// MARK: - Grid Cell Tab Bar
+
+private func gridCellAccentColor(for appThemeHex: String) -> Color {
     switch appThemeHex {
     case ThemeColor.paleYellow.rawValue: return Color(hex: "ffe500") ?? .orange
     case ThemeColor.paleGreen.rawValue:  return Color(hex: "4A8C5C") ?? .orange
@@ -506,16 +588,17 @@ private func splitTabAccentColor(for appThemeHex: String) -> Color {
     }
 }
 
-private struct SplitPaneTabBar: View {
+private struct GridCellTabBar: View {
     let notes: [TabNote]
     let selectedNoteId: String
     let isDarkMode: Bool
     let appThemeHex: String
     let windowID: String
-    let showsCloseSplitButton: Bool
+    let isActiveCell: Bool
+    let tabFontSize: CGFloat
+    let tabHPadding: CGFloat
     let onSelectNote: (String) -> Void
     let onAddNote: () -> Void
-    let onCloseSplit: () -> Void
 
     private var backgroundColor: Color {
         isDarkMode ? Color(white: 0.15) : Color(white: 0.95)
@@ -530,11 +613,11 @@ private struct SplitPaneTabBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 3) {
                     ForEach(notes) { note in
-                        SplitPaneTabItem(
+                        GridCellTabItem(
                             note: note,
                             isActive: note.id == selectedNoteId,
                             windowID: windowID,
@@ -542,53 +625,46 @@ private struct SplitPaneTabBar: View {
                             appThemeHex: appThemeHex,
                             inactiveTabFill: inactiveTabFill,
                             inactiveTextColor: inactiveTextColor,
-                            onSelect: {
-                                onSelectNote(note.id)
-                            }
+                            tabFontSize: tabFontSize,
+                            tabHPadding: tabHPadding,
+                            onSelect: { onSelectNote(note.id) }
                         )
                     }
                 }
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 6)
             }
 
-            Button(action: onAddNote) {
-                Text("+")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(inactiveTextColor)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(
-                        Capsule()
-                            .fill(isDarkMode ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
-                    )
-            }
-            .buttonStyle(.plain)
-
-            if showsCloseSplitButton {
-                Button(action: onCloseSplit) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12))
-                        .foregroundColor(inactiveTextColor.opacity(0.78))
-                }
-                .buttonStyle(.plain)
-            }
+            PlusCellButton(isDarkMode: isDarkMode, action: onAddNote)
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
         .background(backgroundColor)
-    }
-
-    private func textColor(isActive: Bool) -> Color {
-        if isActive {
-            return appThemeHex == ThemeColor.paleYellow.rawValue
-                ? Color(white: 0.12)
-                : .white
-        }
-        return inactiveTextColor
     }
 }
 
-private struct SplitPaneTabItem: View {
+private struct PlusCellButton: View {
+    let isDarkMode: Bool
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text("+")
+                .font(.system(size: 11, weight: .regular))
+                .foregroundColor(
+                    isHovering
+                        ? (isDarkMode ? .white.opacity(0.82) : .black.opacity(0.72))
+                        : (isDarkMode ? .white.opacity(0.38) : .black.opacity(0.30))
+                )
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+    }
+}
+
+private struct GridCellTabItem: View {
     @EnvironmentObject var store: NotesStore
 
     let note: TabNote
@@ -598,13 +674,20 @@ private struct SplitPaneTabItem: View {
     let appThemeHex: String
     let inactiveTabFill: Color
     let inactiveTextColor: Color
+    let tabFontSize: CGFloat
+    let tabHPadding: CGFloat
     let onSelect: () -> Void
 
     @State private var showRenamePopover = false
     @State private var renameText = ""
+    @State private var isHovering = false
 
     private var tabFill: Color {
-        isActive ? splitTabAccentColor(for: appThemeHex) : inactiveTabFill
+        if isActive { return gridCellAccentColor(for: appThemeHex) }
+        if isHovering {
+            return isDarkMode ? Color.white.opacity(0.14) : Color.black.opacity(0.10)
+        }
+        return inactiveTabFill
     }
 
     private var textColor: Color {
@@ -613,12 +696,14 @@ private struct SplitPaneTabItem: View {
                 ? Color(white: 0.12)
                 : .white
         }
-        return inactiveTextColor
+        return isHovering
+            ? (isDarkMode ? .white.opacity(0.88) : .black.opacity(0.78))
+            : inactiveTextColor
     }
 
     var body: some View {
         Button(action: onSelect) {
-            HStack(spacing: 4) {
+            HStack(spacing: 3) {
                 if note.isPinned {
                     Image(systemName: "pin.fill")
                         .font(.system(size: 7))
@@ -626,16 +711,17 @@ private struct SplitPaneTabItem: View {
                 Text(note.title)
                     .lineLimit(1)
             }
-            .font(.system(size: 10, weight: isActive ? .semibold : .medium))
+            .font(.system(size: tabFontSize, weight: isActive ? .semibold : .medium))
             .foregroundColor(textColor)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.horizontal, tabHPadding)
+            .padding(.vertical, 3)
             .background(
                 Capsule()
                     .fill(tabFill)
             )
         }
         .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
         .onChange(of: store.renamingNoteId) { _, id in
             if id == note.id {
                 renameText = note.title
@@ -675,25 +761,6 @@ private struct SplitPaneTabItem: View {
             }
             Button("Open in New Window") {
                 openInNewWindow()
-            }
-            Divider()
-            Button {
-                NotificationCenter.default.post(
-                    name: .splitViewRequested,
-                    object: nil,
-                    userInfo: ["noteId": note.id, "direction": "vertical", "windowID": windowID]
-                )
-            } label: {
-                Label("Split Vertically", systemImage: "rectangle.split.2x1")
-            }
-            Button {
-                NotificationCenter.default.post(
-                    name: .splitViewRequested,
-                    object: nil,
-                    userInfo: ["noteId": note.id, "direction": "horizontal", "windowID": windowID]
-                )
-            } label: {
-                Label("Split Horizontally", systemImage: "rectangle.split.1x2")
             }
             Divider()
             Menu("Theme") {

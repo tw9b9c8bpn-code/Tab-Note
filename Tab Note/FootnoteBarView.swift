@@ -13,12 +13,26 @@ struct FootnoteBarView: View {
     @EnvironmentObject var settings: SettingsManager
     let windowID: String
     @State private var showInfoPopover = false
+    @State private var showGridPicker = false
 
     var body: some View {
         HStack(spacing: 0) {
             Spacer(minLength: 10)
 
             HStack(spacing: 2) {
+                FootnoteButton(
+                    isDarkMode: settings.isDarkMode,
+                    helpText: "Grid View",
+                    action: { showGridPicker.toggle() }
+                ) {
+                    Image(systemName: "square.grid.2x2")
+                        .font(.system(size: 9))
+                }
+                .popover(isPresented: $showGridPicker, arrowEdge: .top) {
+                    GridPickerView(windowID: windowID, onDismiss: { showGridPicker = false })
+                        .environmentObject(settings)
+                }
+
                 FootnoteButton(
                     isDarkMode: settings.isDarkMode,
                     helpText: "Font: \(settings.selectedFontEnum.displayName)",
@@ -138,6 +152,115 @@ private struct FootnoteButton<Label: View>: View {
     }
 }
 
+// MARK: - Grid Picker View (MS Word-style)
+
+struct GridPickerView: View {
+    @EnvironmentObject var settings: SettingsManager
+    let windowID: String
+    let onDismiss: () -> Void
+
+    @State private var hoveredRow = 0
+    @State private var hoveredCol = 0
+
+    private let maxRows = 5
+    private let maxCols = 5
+    private let cellSize: CGFloat = 22
+    private let cellSpacing: CGFloat = 3
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text(labelText)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(settings.isDarkMode ? .white.opacity(0.8) : .black.opacity(0.7))
+
+            // Grid of hoverable cells — bottom-left = 1×1, grows up and right
+            // displayRow 1 = top visual row = maxRows actual rows
+            // displayRow maxRows = bottom visual row = 1 actual row
+            VStack(spacing: cellSpacing) {
+                ForEach(1...maxRows, id: \.self) { displayRow in
+                    let actualRows = maxRows - displayRow + 1
+                    HStack(spacing: cellSpacing) {
+                        ForEach(1...maxCols, id: \.self) { col in
+                            let isHighlighted = actualRows <= hoveredRow && col <= hoveredCol
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(isHighlighted ? accentFill : inactiveFill)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .stroke(isHighlighted ? accentBorder : inactiveBorder, lineWidth: 1)
+                                )
+                                .frame(width: cellSize, height: cellSize)
+                                .onHover { hovering in
+                                    if hovering {
+                                        hoveredRow = actualRows
+                                        hoveredCol = col
+                                    }
+                                }
+                                .onTapGesture {
+                                    selectGrid(rows: actualRows, cols: col)
+                                }
+                        }
+                    }
+                }
+            }
+
+            // Exit grid button
+            Button(action: {
+                NotificationCenter.default.post(
+                    name: .gridViewRequested,
+                    object: nil,
+                    userInfo: ["rows": 1, "cols": 1, "windowID": windowID]
+                )
+                onDismiss()
+            }) {
+                Text("Exit Grid View")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(12)
+        .frame(width: CGFloat(maxCols) * (cellSize + cellSpacing) + 20)
+    }
+
+    private var labelText: String {
+        if hoveredRow > 0 && hoveredCol > 0 {
+            return "\(hoveredRow) × \(hoveredCol)"
+        }
+        return "Select Grid"
+    }
+
+    private var accentFill: Color {
+        settings.isDarkMode
+            ? Color.accentColor.opacity(0.35)
+            : Color.accentColor.opacity(0.2)
+    }
+
+    private var accentBorder: Color {
+        Color.accentColor.opacity(0.6)
+    }
+
+    private var inactiveFill: Color {
+        settings.isDarkMode
+            ? Color.white.opacity(0.06)
+            : Color.black.opacity(0.04)
+    }
+
+    private var inactiveBorder: Color {
+        settings.isDarkMode
+            ? Color.white.opacity(0.15)
+            : Color.black.opacity(0.12)
+    }
+
+    private func selectGrid(rows: Int, cols: Int) {
+        NotificationCenter.default.post(
+            name: .gridViewRequested,
+            object: nil,
+            userInfo: ["rows": rows, "cols": cols, "windowID": windowID]
+        )
+        onDismiss()
+    }
+}
+
 // MARK: - AI Popup View
 
 struct AIPopupView: View {
@@ -230,6 +353,7 @@ struct QuickGuideView: View {
                 shortcutRow("⌘⌥← / →",    "Move Tab Left / Right")
                 shortcutRow("⌘⇧⌥← / →",   "Switch Tab Left / Right")
                 shortcutRow("⌘L",          "Rename current tab")
+                shortcutRow("⌘D",          "Toggle Dark / Light Mode")
                 shortcutRow("⌘B / ⌘I",    "Bold / Italic")
                 shortcutRow("⌘U",          "Highlight text")
                 shortcutRow("⌘F",          "Toggle Search bar")

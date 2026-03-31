@@ -36,4 +36,6 @@ extension Notification.Name {
     static let inlineAIStatusDidChange = Notification.Name("inlineAIStatusDidChange")
     static let tabWillChange = Notification.Name("tabWillChange")
     static let splitViewRequested = Notification.Name("splitViewRequested")
+    static let gridViewRequested = Notification.Name("gridViewRequested")
+    static let gridHorizontalToggle = Notification.Name("gridHorizontalToggle")
 }

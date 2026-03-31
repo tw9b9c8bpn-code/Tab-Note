@@ -128,6 +128,7 @@ struct NoteEditorView: NSViewRepresentable {
 
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.autoresizingMask = NSView.AutoresizingMask.width
         textView.textContainerInset = NSSize(width: 12, height: 12)
 
@@ -663,6 +664,31 @@ class HighlightCapturingTextView: NSTextView {
         return becameFirstResponder
     }
 
+    // MARK: - Caret scroll
+
+    /// NSTextView doesn't reliably follow the caret when the document view grows
+    /// (TextKit 1 layout isn't always flushed before the built-in scroll attempt).
+    /// Overriding insertNewline + paste and deferring scroll to the next runloop
+    /// tick — after layout is complete — fixes this reliably without interfering
+    /// with manual scrolling (unlike hooking textDidChange).
+
+    override func insertNewline(_ sender: Any?) {
+        super.insertNewline(sender)
+        scrollToCaretAfterLayout()
+    }
+
+    private func scrollToCaretAfterLayout() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if let lm = self.layoutManager, let tc = self.textContainer {
+                lm.ensureLayout(for: tc)
+            }
+            self.scrollRangeToVisible(
+                NSRange(location: self.selectedRange().location, length: 0)
+            )
+        }
+    }
+
     @objc private func themeBtnClicked(_ sender: NSButton) {
         if let hex = sender.identifier?.rawValue { onThemeSelected?(hex) }
     }
@@ -1178,6 +1204,7 @@ class HighlightCapturingTextView: NSTextView {
         setSelectedRange(NSRange(location: newLoc, length: 0))
         didChangeText()
         notifyRichTextChange()
+        scrollToCaretAfterLayout()
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {

@@ -52,11 +52,11 @@ struct TabItemView: View {
                     .foregroundColor(textColor.opacity(0.8))
             }
             Text(note.title)
-                .font(.system(size: 10, weight: isActive ? .semibold : .medium))
+                .font(.system(size: settings.tabFontSize, weight: isActive ? .semibold : .medium))
                 .foregroundColor(textColor)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, settings.tabHPadding)
         .padding(.vertical, 3)
         .background(
             Capsule()
