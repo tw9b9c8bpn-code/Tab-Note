@@ -5,16 +5,16 @@
     <link>https://raw.githubusercontent.com/tw9b9c8bpn-code/Tab-Note/main/appcast.xml</link>
     <description>Tab Note updates</description>
     <item>
-      <title>Version 1.0.1</title>
-      <pubDate>Thu, 05 Mar 2026 11:24:40 +0000</pubDate>
-      <sparkle:version>2</sparkle:version>
-      <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
+      <title>Version 1.0.2</title>
+      <pubDate>Tue, 31 Mar 2026 05:21:42 +0000</pubDate>
+      <sparkle:version>3</sparkle:version>
+      <sparkle:shortVersionString>1.0.2</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>26.2</sparkle:minimumSystemVersion>
       <enclosure
-        url="https://github.com/tw9b9c8bpn-code/Tab-Note/releases/download/v1.0.1/Tab-Note-1.0.1.zip"
-        length="1698322"
+        url="https://github.com/tw9b9c8bpn-code/Tab-Note/releases/download/v1.0.2/Tab-Note-1.0.2.zip"
+        length="2248090"
         type="application/octet-stream"
-        sparkle:edSignature="galItskxC4uEvsxYMKZKU4YkEpdvfLJBp1BKrRUcd+PD7gvos7mlTwwe+ss0yW+wORsiyUHBXMNIP257Xju0BA==" />
+        sparkle:edSignature="ZdGBpX3X0uc35XfTXhyLgpNGrFt91qVbw9SjxtRNtrbW5yryPZCg7ZZDcFMAdOf74YyIl1BZApa69lsa5mYQDA==" />
     </item>
   </channel>
 </rss>

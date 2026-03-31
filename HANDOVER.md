@@ -1,14 +1,16 @@
 # HANDOVER (Tab Note)
 
-## In progress (2026-03-31, preparing the 1.0.2 release)
-- Releasing current tracked UI/editor work as Tab Note `1.0.2` with build `3`.
-- Current release content includes the new grid view workflow, panel/frontmost visibility handling, tab density controls, caret auto-scroll fixes, and shortcut additions like `⌘D` for theme toggle and `⌘G` for horizontal grid toggle.
+## Completed in this pass (2026-03-31, released Tab Note 1.0.2)
+- Released current tracked UI/editor work as Tab Note `1.0.2` with build `3`.
+- Release content includes the new grid view workflow, panel/frontmost visibility handling, tab density controls, caret auto-scroll fixes, and shortcut additions like `⌘D` for theme toggle and `⌘G` for horizontal grid toggle.
+- Release artifacts now exist in `/Users/kientran/Downloads` and repo root as `Tab-Note-1.0.2.zip` and `Tab-Note-1.0.2.dmg`.
 - Preferences / dislikes reinforced from user feedback:
   - wants release packaging carried through end-to-end, not stopped at blocker summaries
   - wants the DMG placed in `/Users/kientran/Downloads` with the `Applications` drag-and-drop shortcut ready for Gumroad uploads
   - wants `HANDOVER.md` kept brief and updated during the pass in case another AI has to take over
 - Mistakes / wrong assumptions fixed in this pass:
   - I could not assume `1.0.1` was still just local metadata; I verified GitHub/appcast first, confirmed `v1.0.1` already exists remotely, and bumped the release to `1.0.2` instead of reusing the old version
+  - I also could not trust the release skill's origin auto-detection blindly; it resolved the repo as `tw9b9c8bpn-code/Tab-Note.git`, so I had to finish publication with the correct repo slug `tw9b9c8bpn-code/Tab-Note` to keep the GitHub release and `appcast.xml` URLs valid
 
 ## Completed in this pass (2026-03-27, split-pane tabs regained right-click actions)
 - Reworked split-pane tab items in:
